@@ -4,8 +4,9 @@
  * down, a stale control and a relay that ordered no stop run none, a failed
  * stop rejects to its caller, the ack is confirmed only when every
  * chat stopped, a local kill is kept and sent again until the relay has it,
- * a kill is never cleared on its own, the lease and a revoked device stop
- * only relay-started work, and a restart or wake enforces the saved state.
+ * a kill is never cleared on its own and a generation a command frame named
+ * clears none either, the lease and a revoked device stop only relay-started
+ * work, and a restart or wake enforces the saved state.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMigratedDb } from './helpers/test-db'
@@ -186,6 +187,44 @@ describe('Stop all on this desktop', () => {
     await service.applyControl({ stop_generation: 5, killed: false })
     expect(readBridgeStopRecord()).toMatchObject({ generation: 5, killed: true, killPending: true })
     expect(host.frames[0]).toEqual({ type: 'kill', stop_generation: 5 })
+  })
+})
+
+describe('a generation a command frame named', () => {
+  it('records it, runs that stop and acks it, with the stored kill untouched', async () => {
+    host.active.set('b1', 'relay')
+    writeBridgeStopRecord({ generation: 1, killed: true, killPending: false })
+    await service.advanceStopGeneration(2)
+    expect(readBridgeStopRecord()).toMatchObject({ generation: 2, killed: true })
+    expect(host.stops).toHaveLength(1)
+    expect(host.frames).toEqual([{ type: 'stop_ack', stop_generation: 2, state: 'confirmed' }])
+  })
+
+  it('never clears a kill queued ahead of it; only a relay control clears one', async () => {
+    // The lease check holds the queue while the operator's kill and a command
+    // frame at the same generation pile up behind it.
+    host.active.set('relay', 'relay')
+    host.contact = NOW - BRIDGE_CONTROL_LEASE_MS - 1
+    let release = () => {}
+    const halted = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const stopGroups = host.stopGroups
+    host.stopGroups = async (sources) => {
+      host.stopGroups = stopGroups
+      await halted
+      return stopGroups(sources)
+    }
+    const lease = service.checkLease()
+    const control = service.applyControl({ stop_generation: 5, killed: true })
+    const command = service.advanceStopGeneration(5)
+    release()
+    await Promise.all([lease, control, command])
+    expect(readBridgeStopRecord()).toMatchObject({ generation: 5, killed: true })
+
+    // The operator's clear-kill is a real control, and it still clears.
+    await service.applyControl({ stop_generation: 5, killed: false })
+    expect(readBridgeStopRecord()).toMatchObject({ generation: 5, killed: false })
   })
 })
 

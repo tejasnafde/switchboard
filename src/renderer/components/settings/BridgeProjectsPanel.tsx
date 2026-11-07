@@ -2,8 +2,9 @@
  * Settings > Labs, shown only while the Instinct bridge flag is on: the
  * sidebar's projects, each with a checkbox for whether the bridge may open it.
  * A checked project gets the default policy (auto capped at auto, edits and
- * checks on, commit, push, pull requests, merge and deploy off). None is
- * checked until the owner chooses.
+ * checks on, commit, push, pull requests, merge and deploy off; the action
+ * flags are recorded only, nothing reads them yet). None is checked until
+ * the owner chooses.
  */
 import { useEffect, useState } from 'react'
 import type { BridgeProjectSetup, BridgeProjectSetupRow } from '@shared/bridge'
@@ -59,7 +60,7 @@ export function BridgeProjectsPanel() {
       <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
         <p className="m-0 px-[14px] pb-1 pt-3 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
           Instinct and local agents can find and read chats only in the projects you check. New work runs in auto mode
-          at most. Commit, push, pull requests, merge and deploy stay off.
+          at most. A chat here runs with your own access to this Mac.
         </p>
         {projects.length === 0 && (
           <p className="m-0 px-[14px] py-3 text-[12px] text-[var(--text-muted)]">No projects yet.</p>

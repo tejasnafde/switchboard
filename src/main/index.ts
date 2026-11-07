@@ -48,8 +48,14 @@ import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass 
 import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
 import { HUB_CHILDREN_LABS_SETTING, HUB_REMOTE_CHILDREN_LABS_SETTING } from '@shared/hub'
-import { INSTINCT_BRIDGE_LABS_SETTING } from '@shared/bridge'
-import { bridgeDeviceLink, onBridgeRelayControl, stopBridgeDeviceLink } from './bridge/device-link'
+import { INSTINCT_BRIDGE_LABS_SETTING, instinctBridgeEnabled } from '@shared/bridge'
+import {
+  bridgeDeviceLink,
+  onBridgeRelayCommand,
+  onBridgeRelayControl,
+  stopBridgeDeviceLink,
+} from './bridge/device-link'
+import { BridgeCommandDispatcher } from './bridge/command-dispatch'
 import { BridgeStopService, bridgeStopService, setBridgeStopService } from './bridge/stop-service'
 import { labsFlagCapabilities } from '@shared/labs'
 import {
@@ -117,6 +123,7 @@ import {
   deferSlowMigrationsUntilWindow,
   runSlowMigrations,
   getConversationTitle,
+  readBridgeStopRecord,
 } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import {
@@ -387,6 +394,28 @@ function startBridgeStopControls(): void {
     authorityLost: (reason) => void service.authorityLost(reason).catch(failedStop('authority lost')),
   })
   service.start()
+}
+
+/**
+ * Lets the relay run the seven tools on this desktop, through the registry's
+ * own bridge services. Each frame re-reads the `instinct_bridge` flag, and
+ * the services read the policy, the execution root and the kill again right
+ * before each mutation. Once the app is quitting no command runs at all: the
+ * registry is being drained, so a session started then would miss its
+ * teardown.
+ */
+function startBridgeCommandDispatch(registry: ProviderRegistry): void {
+  const dispatcher = new BridgeCommandDispatcher({
+    enabled: () => instinctBridgeEnabled(process.env, getSetting),
+    quitting: () => quitCoordinator.isQuitting,
+    ...registry.bridgeServices(),
+    stopGeneration: () => readBridgeStopRecord().generation,
+    // A command frame carries no kill: the stop service reads the stored one inside its own queue.
+    advanceStopGeneration: async (generation) => {
+      await bridgeStopService()?.advanceStopGeneration(generation)
+    },
+  })
+  onBridgeRelayCommand((frame) => dispatcher.run(frame))
 }
 
 /** A stop runs on its own queue, so a step that throws is reported here, never unhandled. */
@@ -1082,6 +1111,7 @@ app.whenReady().then(() => {
   providerRegistry = new ProviderRegistry(backendHost)
   providerRegistry.setRemoteHubClients(remoteHubClients)
   void reconnectHubMachinesOnLaunch()
+  startBridgeCommandDispatch(providerRegistry)
   bridgeDeviceLink().reconcile()
   worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(backendHost, () => providerRegistry)
   configureHubWorktrees(worktreeCreationRuntime)

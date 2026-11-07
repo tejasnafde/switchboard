@@ -480,8 +480,8 @@ const ROWS = {
       where: 'Desktop only',
       more: [
         'Choose the allowed projects in the list under this section. Local agents get read tools for their chats (list_projects, list_recent_chats, search_chats, read_chat).',
-        'Enroll this Mac under the project list to connect it to the bridge relay. The relay then lists the allowed projects to Instinct, without their folders. Instinct cannot start or send work through the relay yet.',
-        'No project is allowed until you choose it. Commit, push and pull requests stay off unless you turn them on for a project. Merge and deploy stay off.',
+        'Enroll this Mac under the project list to connect it to the bridge relay. The relay then lists the allowed projects to Instinct, without their folders, and Instinct can then run all seven tools here as you.',
+        'No project is allowed until you choose it. A project also records which actions you allow (commit, push, pull requests, merge and deploy are off by default), but nothing enforces those yet and they never limit what a chat can run on your Mac.',
         'Off blocks new bridge work. Status and Stop still work for chats the bridge started.',
       ],
     },

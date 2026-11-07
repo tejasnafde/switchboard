@@ -388,6 +388,7 @@ export const BRIDGE_ERROR_CODES = [
   'cursor_expired',
   'policy_denied',
   'killed',
+  'invalid_request',
   'internal_error',
 ] as const
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number]
@@ -421,6 +422,7 @@ const DEFAULT_RETRY: Record<BridgeErrorCode, BridgeRetryAdvice> = {
   cursor_expired: 'read_first',
   policy_denied: 'ask_owner',
   killed: 'ask_owner',
+  invalid_request: 'none',
   internal_error: 'none',
 }
 

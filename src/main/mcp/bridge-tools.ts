@@ -112,13 +112,8 @@ export function buildBridgeTools(deps: BridgeToolDeps): McpTool[] {
     idempotentHint: true,
     openWorldHint: false,
   })
-  // Every caller here is an agent on this Mac. The relay's own dispatch builds its own caller.
-  const caller = (): BridgeCaller => ({
-    kind: 'local-agent',
-    chatId: deps.chatId(),
-    mode: deps.runtimeMode(),
-    source: 'local',
-  })
+  // Every caller here is an agent on this Mac. The relay's dispatcher builds the owner's caller.
+  const caller = (): BridgeCaller => ({ kind: 'local-agent', chatId: deps.chatId(), mode: deps.runtimeMode() })
 
   return [
     {

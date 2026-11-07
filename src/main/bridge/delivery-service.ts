@@ -3,11 +3,12 @@
  * projects the owner allowed on this desktop.
  *
  * One typed service. The local MCP wrapper (`mcp/bridge-tools.ts`) calls it
- * for an agent thread; the relay endpoint will call the same methods for the
- * owner. A chat starts through the managed session service and every message
- * goes in through the durable atomic user-turn acceptance, as an ordinary
- * user turn: it cannot answer a pending approval, and the chat keeps its own
- * permission gates. Nothing here goes through the agent-to-agent peer gate.
+ * for an agent thread, and the relay's dispatcher (`bridge/command-dispatch.ts`)
+ * calls the same methods for the owner. A chat starts through the managed
+ * session service and every message goes in through the durable atomic
+ * user-turn acceptance, as an ordinary user turn: it cannot answer a pending
+ * approval, and the chat keeps its own permission gates. Nothing here goes
+ * through the agent-to-agent peer gate.
  *
  * Every call reserves `(operation, idempotency_key)` with its input hash
  * before any provider action. The same key and body answers from that record;
@@ -111,16 +112,46 @@ export interface BridgeDeliveryHost {
 }
 
 /**
- * Who asks. A local agent is identified by its MCP token: it cannot act from
- * plan mode and cannot start or drive work in a mode wider than its own.
- * `source` is stamped on every chat the call reaches, and decides what the
- * control lease and a revoked device may stop.
+ * Who asks.
+ *
+ * A local agent is identified by its MCP token: it cannot act from plan mode
+ * and cannot start or drive work in a mode wider than its own, and its keys
+ * are scoped to its own chat.
+ *
+ * The owner comes in over the relay and has no calling chat, so no check here
+ * reads one for it: it is not a peer agent, it never passes through the agent
+ * peer gate and it gets none of a local agent's chat-scoped privileges. Its
+ * authority is the project policy alone (the mode cap and the allowed
+ * agents), and its idempotency key is the call id the relay reserved, so the
+ * desktop's record and the relay's name the same call.
+ *
+ * The policy's action flags (commit, push, pr, merge, deploy) are recorded
+ * policy only. Nothing here reads them: they will authorize the bridge's own
+ * publication actions when those ship. They are not a sandbox, and a chat
+ * runs with the local user's own access whatever they say.
  */
-export interface BridgeCaller {
-  kind: 'local-agent'
-  chatId: string
-  mode: RuntimeMode
-  source: BridgeOriginSource
+export type BridgeCaller =
+  | { kind: 'local-agent'; chatId: string; mode: RuntimeMode }
+  | { kind: 'owner'; callId: string }
+
+/** Stamped on every chat the call reaches; it decides what the control lease and a revoked device may stop. */
+function callerSource(caller: BridgeCaller): BridgeOriginSource {
+  return caller.kind === 'owner' ? 'relay' : 'local'
+}
+
+/** The widest mode the caller may reach: the project cap, narrowed by a local agent's own mode. */
+function callerCap(policy: { maximum_mode: RuntimeMode }, caller: BridgeCaller): RuntimeMode {
+  return caller.kind === 'owner' ? policy.maximum_mode : narrower(policy.maximum_mode, caller.mode)
+}
+
+/** The relay reserves the call id before it dispatches; a local call gets its own. */
+function callerCallId(caller: BridgeCaller): string {
+  return caller.kind === 'owner' ? caller.callId : `bcall_${randomUUID()}`
+}
+
+/** A local agent cannot act from plan mode. The owner has no chat and no mode of its own. */
+function callerInPlanMode(caller: BridgeCaller): boolean {
+  return caller.kind === 'local-agent' && caller.mode === 'plan'
 }
 
 export interface StartChatInput {
@@ -243,7 +274,7 @@ export class BridgeDeliveryService {
   async startChat(caller: BridgeCaller, input: StartChatInput): Promise<BridgeResult<BridgeStartReceipt>> {
     const opened = this.open('start_chat', caller, input)
     if (opened.kind === 'answer') return opened.answer as BridgeResult<BridgeStartReceipt>
-    if (caller.mode === 'plan') return fail(planDenied())
+    if (callerInPlanMode(caller)) return fail(planDenied())
     const machineId = this.host.machineId()
     const resolved = this.reads.resolveProject(this.reads.allowed(machineId), input.project)
     if (!resolved.ok) return resolved
@@ -251,7 +282,7 @@ export class BridgeDeliveryService {
     const { policy } = project
     const target = { project_id: policy.project_id }
 
-    const cap = narrower(policy.maximum_mode, caller.mode)
+    const cap = callerCap(policy, caller)
     const mode = resolveBridgeMode(input.mode, { default_mode: narrower(policy.default_mode, cap), maximum_mode: cap })
     if (!mode.ok)
       return fail(
@@ -282,8 +313,11 @@ export class BridgeDeliveryService {
     if (!insideRoot(project.sidebarPath, policy.canonical_local_root))
       return fail(bridgeError('project_not_allowed', 'The project folder moved or no longer resolves.', { target }))
 
-    // The agent check awaited: a Stop all may have come meanwhile.
+    // The agent check awaited: a Stop all or a narrower agent list may have come meanwhile.
     if (readBridgeStopRecord().killed) return fail(killedError(target))
+    const still = this.reads.allowed(machineId).find((a) => a.policy.project_id === policy.project_id)
+    if (!still) return fail(bridgeError('project_not_allowed', 'That project is no longer allowed.', { target }))
+    if (agentDenied(still.policy, agent)) return fail(agentNotAllowed(still.policy.allowed_agents, target))
     // Checked and claimed with no await between, so two starts cannot both pass.
     const running = this.activeBridgeChat(machineId)
     if (running)
@@ -295,7 +329,7 @@ export class BridgeDeliveryService {
         ),
       )
 
-    const callId = `bcall_${randomUUID()}`
+    const callId = callerCallId(caller)
     const chatId = `agent_${this.now()}_${randomBytes(4).toString('hex')}`
     const origin = ORIGIN_PREFIX + callId
     const reservation = reserveBridgeCall({
@@ -332,7 +366,7 @@ export class BridgeDeliveryService {
           projectId: policy.project_id,
           machineId,
           policyRevision: policy.revision,
-          source: caller.source,
+          source: callerSource(caller),
         })
       })()
       const fence = this.fence(chatId)
@@ -358,7 +392,7 @@ export class BridgeDeliveryService {
           }),
         )
       }
-      const refused = this.beforeSubmit(chatId, fence, project, caller, ref)
+      const refused = this.beforeSubmit(chatId, fence, project, caller, ref, agent)
       if (refused) return this.reject(callId, refused)
       const delivered = await this.deliver(callId, {
         version: 1,
@@ -387,20 +421,20 @@ export class BridgeDeliveryService {
   async sendToChat(caller: BridgeCaller, input: SendToChatInput): Promise<BridgeResult<BridgeSendReceipt>> {
     const opened = this.open('send_to_chat', caller, input)
     if (opened.kind === 'answer') return opened.answer as BridgeResult<BridgeSendReceipt>
-    if (caller.mode === 'plan') return fail(planDenied())
+    if (callerInPlanMode(caller)) return fail(planDenied())
     const machineId = this.host.machineId()
     const resolved = this.reads.resolveChat(this.reads.allowed(machineId), machineId, input.chat)
     if (!resolved.ok) return resolved
     const { row, project } = resolved.value
     const chatId = row.id
     const ref = { machine_id: machineId, chat_id: chatId }
-    if (chatId === resolveRootThreadId(caller.chatId))
+    if (caller.kind === 'local-agent' && chatId === resolveRootThreadId(caller.chatId))
       return fail(bridgeError('policy_denied', 'That is the calling chat. Pick another chat.', { target: ref }))
     const refused = this.chatRefusal(chatId, caller, project, ref)
     if (refused) return fail(refused)
 
     const requested = input.delivery ?? 'queue'
-    const callId = `bcall_${randomUUID()}`
+    const callId = callerCallId(caller)
     const origin = ORIGIN_PREFIX + callId
     const reservation = reserveBridgeCall({
       callId,
@@ -428,7 +462,8 @@ export class BridgeDeliveryService {
       }
       // The resume awaited: the chat may have changed meanwhile.
       const changed =
-        this.beforeSubmit(chatId, fence, project, caller, ref) ?? this.chatRefusal(chatId, caller, project, ref)
+        this.beforeSubmit(chatId, fence, project, caller, ref, row.agent_type) ??
+        this.chatRefusal(chatId, caller, project, ref)
       if (changed) return this.reject(callId, changed)
       recordBridgeOrigin({
         conversationId: chatId,
@@ -436,7 +471,7 @@ export class BridgeDeliveryService {
         projectId: project.policy.project_id,
         machineId,
         policyRevision: project.policy.revision,
-        source: caller.source,
+        source: callerSource(caller),
       })
       const live = this.host.liveThread(chatId) ?? chatId
       const actual: BridgeActualDelivery =
@@ -478,7 +513,7 @@ export class BridgeDeliveryService {
     if (!resolved.ok) return resolved
     const { row, project } = resolved.value
     const chatId = row.id
-    const callId = `bcall_${randomUUID()}`
+    const callId = callerCallId(caller)
     const reservation = reserveBridgeCall({
       callId,
       operation: 'stop_chat',
@@ -532,7 +567,7 @@ export class BridgeDeliveryService {
         answer: fail(bridgeError('bridge_disabled', 'The Instinct bridge is off in Settings > Labs.')),
       }
     // A child chat answers only to its parent: the bridge is no way around that.
-    if (this.host.isOpenChild(caller.chatId))
+    if (caller.kind === 'local-agent' && this.host.isOpenChild(caller.chatId))
       return {
         kind: 'answer',
         answer: fail(bridgeError('child_read_only', 'A hub child chat cannot start, message or stop other chats.')),
@@ -545,8 +580,9 @@ export class BridgeDeliveryService {
           bridgeError('policy_denied', `idempotency_key must be 1 to ${IDEMPOTENCY_KEY_MAX_CHARS} characters.`),
         ),
       }
-    // Keys are per caller: another chat's key never replays this one's receipt.
-    const key = `local:${resolveRootThreadId(caller.chatId)}:${raw}`
+    // Keys are per caller: another chat's key never replays this one's receipt,
+    // and the owner's namespace is the relay's, never a local agent's.
+    const key = caller.kind === 'owner' ? `relay:${raw}` : `local:${resolveRootThreadId(caller.chatId)}:${raw}`
     const hash = bridgeInputHash(operation, input as Record<string, unknown>, sha256)
     const prior = findBridgeCall(operation, key)
     // Reads and stops go on while bridge work is killed; an earlier call still answers from its record.
@@ -688,11 +724,13 @@ export class BridgeDeliveryService {
     project: AllowedProject,
     ref: BridgeChatRef,
   ): BridgeError | null {
-    if (getConversationById(chatId)?.archived === 1)
+    const row = getConversationById(chatId)
+    if (row?.archived === 1)
       return bridgeError('chat_archived', 'That chat is archived. The owner must unarchive it.', { target: ref })
     if (this.host.isOpenChild(chatId))
       return bridgeError('child_read_only', 'That chat belongs to a hub. Message its hub chat.', { target: ref })
-    const cap = narrower(project.policy.maximum_mode, caller.mode)
+    if (row && agentDenied(project.policy, row.agent_type)) return agentNotAllowed(project.policy.allowed_agents, ref)
+    const cap = callerCap(project.policy, caller)
     if (wider(this.host.chatMode(chatId), cap))
       return bridgeError(
         'mode_not_allowed',
@@ -705,7 +743,9 @@ export class BridgeDeliveryService {
   /**
    * Right before a turn goes in, after the start or resume awaited: no stop
    * came meanwhile, the bridge is still on, the project is still allowed
-   * under the same root and cap, and the chat still runs inside that root.
+   * under the same root, cap and agents, and the chat still runs inside that
+   * root. `agent` is the agent the turn reaches: the one a start chose, or
+   * the one the target chat runs on.
    */
   private beforeSubmit(
     chatId: string,
@@ -713,6 +753,7 @@ export class BridgeDeliveryService {
     project: AllowedProject,
     caller: BridgeCaller,
     ref: BridgeChatRef,
+    agent: string,
   ): BridgeError | null {
     if (this.fenced(chatId, fence)) return stoppedBeforeSend(ref)
     if (readBridgeStopRecord().killed) return killedError(ref)
@@ -723,7 +764,8 @@ export class BridgeDeliveryService {
       .find((a) => a.policy.project_id === project.policy.project_id)
     if (!current || current.policy.canonical_local_root !== project.policy.canonical_local_root)
       return bridgeError('project_not_allowed', 'That project is no longer allowed. Nothing was sent.', { target: ref })
-    const cap = narrower(current.policy.maximum_mode, caller.mode)
+    if (agentDenied(current.policy, agent)) return agentNotAllowed(current.policy.allowed_agents, ref)
+    const cap = callerCap(current.policy, caller)
     if (wider(this.host.chatMode(chatId), cap))
       return bridgeError('mode_not_allowed', `This project now allows modes up to ${cap}. Nothing was sent.`, {
         target: ref,
@@ -934,6 +976,22 @@ export class BridgeDeliveryService {
     )
     return busy?.conversationId ?? null
   }
+}
+
+/**
+ * The owner's agent restriction on a project. An empty list is no
+ * restriction: which agents can actually start is availability, not policy,
+ * and `bridgeProjectAgents` answers that for a start.
+ */
+function agentDenied(policy: { allowed_agents: AgentType[] }, agent: string): boolean {
+  return policy.allowed_agents.length > 0 && !(policy.allowed_agents as string[]).includes(agent)
+}
+
+function agentNotAllowed(choices: AgentType[], target: BridgeChatRef | { project_id: string }): BridgeError {
+  return bridgeError('agent_unavailable', 'This project does not allow that agent.', {
+    target,
+    agent_choices: choices,
+  })
 }
 
 function planDenied(): BridgeError {
