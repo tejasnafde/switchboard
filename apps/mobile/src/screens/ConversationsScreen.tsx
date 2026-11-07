@@ -333,7 +333,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
  * name otherwise, so a Cursor chat or an agent this build does not know still
  * says what it is.
  */
-function AgentChip({ row }: { row: ConversationRow }) {
+export function AgentChip({ row }: { row: ConversationRow }) {
   const agent = row.origin_source === 'cursor' ? row.origin_source : row.agent_type
   if (agentMark(agent)) return <AgentMark agent={agent} />
   return (

@@ -61,11 +61,12 @@
     "automated": [
       "npm run typecheck passed for both the main and renderer projects.",
       "npx vitest run --maxWorkers=2 passed, including tests/unit/agent-marks.test.ts and tests/unit/android-agent-mark-drawables.test.ts, which keeps the checked-in vector drawables equal to the shared path data (regenerate with SB_UPDATE_FIXTURES=1).",
-      "apps/mobile: npx tsc --noEmit and the jest suite passed, including src/components/__tests__/AgentMark.test.tsx, which renders the OpenCode mark, takes the wire spelling of Claude and draws nothing for an agent with no mark.",
+      "apps/mobile: npx tsc --noEmit and the jest suite passed, including src/components/__tests__/AgentMark.test.tsx, which renders the OpenCode mark, takes the wire spelling of Claude and draws nothing for an agent with no mark, and src/components/__tests__/AgentChip.test.tsx, which pins what a conversation row shows: the mark alone for a marked agent, the word Cursor for an import stored as claude-code, and the raw id for an agent this build does not know.",
       "apps/android: the Gradle unit tests passed, including AgentMarksTest, which checks that every generated drawable has a Kotlin mapping and that an unknown agent gets none.",
       "The desktop screens are unchanged by this branch, so no screenshot baseline moved.",
       "The Play store screenshots were regenerated from the Robolectric StoreScreenshotsTest, because 02-chats.png shows the browse chat list the marks are on. 03-running-chat.png, 04-approval.png and 05-diff.png moved too, in the chat header subtitle and the file-diff footer: those are screens this branch does not touch, so the committed shots had drifted from main and the rerun caught up with it. 01-connections.png and 06-reviews.png came out pixel for pixel the same and were left alone.",
-      "An adversarial review of the branch diff was run. Its findings were fixed: Android drew the Claude mark on a chat imported from Cursor (such a chat is stored as claude-code, and now keeps its text label), a row whose only supporting text was the agent name rendered an empty second line, and an agent with no mark left the titles of a mixed list in two columns."
+      "An adversarial review of the branch diff was run. Its findings were fixed: Android drew the Claude mark on a chat imported from Cursor (such a chat is stored as claude-code, and now keeps its text label), a row whose only supporting text was the agent name rendered an empty second line, and an agent with no mark left the titles of a mixed list in two columns.",
+      "CodeRabbit reviewed the pull request after its rate limit reset. Its one finding, that the Cursor fallback on the conversation row had no render test, is fixed by src/components/__tests__/AgentChip.test.tsx."
     ],
     "hardware": [],
     "notExercised": [
