@@ -272,6 +272,7 @@ import {
   hubChildrenEnabled,
   hubRemoteChildrenEnabled,
   hubResumeTurn,
+  grantedMode,
   autoMoveTarget,
   readHubAutoMovePercent,
   type HubAccountRoom,
@@ -1151,15 +1152,17 @@ export class ProviderRegistry implements PeerToolHost {
     const root = getConversationExecutionRoot(childId)
     const cwd = root?.worktreePath ?? root?.projectPath ?? row?.project_path
     if (!row || !cwd) return null
-    const stored = getConversationRuntimeMode(childId) ?? child.grantedMode
-    const mode = isRuntimeMode(stored) ? stored : undefined
+    const stored = getConversationRuntimeMode(childId)
+    // Never above its grant: the mode row is written even with no session
+    // (`SET_RUNTIME_MODE`), and a restart must not widen what the child may do.
+    const mode = grantedMode(isRuntimeMode(stored) ? stored : undefined, child.grantedMode)
     const model = getConversationModel(childId) ?? child.requestedModel
     const instanceId = getConversationProviderInstanceId(childId) ?? child.providerInstanceId
     return {
       threadId: childId,
       provider: providerKindFor(row.agent_type),
       cwd,
-      ...(mode ? { runtimeMode: mode } : {}),
+      runtimeMode: mode,
       ...(model ? { model } : {}),
       ...(row.session_id ? { resumeSessionId: row.session_id } : {}),
       ...(instanceId ? { instanceId } : {}),

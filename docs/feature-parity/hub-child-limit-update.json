@@ -36,7 +36,9 @@
     },
     "updateRelease": {
       "status": "implemented",
-      "evidence": ["CHANGELOG.md"]
+      "evidence": [
+        "CHANGELOG.md"
+      ]
     }
   },
   "verification": {
@@ -47,7 +49,7 @@
     ],
     "hardware": [],
     "notExercised": [
-      "Not run in a packaged app: hub_children is off by default and the change needs a parent chat whose child hits a five-hour limit.",
+      "A packaged build was run from a backup copy of the real user database on 2026-11-07 and its migration added hub_wakes.stale_at with no error (see hub-children-header-list.json). Not run there: a child that hits a real five-hour limit, which needs an account to run out.",
       "A child on another machine (hub_remote_children, off by default) still shows the update its hub imported until the next one arrives: the hub runs no turn of its own for it, so nothing there marks the imported row stale. The child's own machine clears it for its own view."
     ]
   }

@@ -27,11 +27,19 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
 })
 
 const db = vi.hoisted(() => ({
-  children: [] as Array<{ childId: string; parentId: string; title: string; phase: string }>,
+  children: [] as Array<{
+    childId: string
+    parentId: string
+    title: string
+    phase: string
+    grantedMode?: string
+  }>,
   wakes: [] as Array<Record<string, unknown>>,
   held: new Map<string, string | null>(),
   /** `conversations.session_id`, which a restart reads to resume a child. */
   sessionIds: new Map<string, string>(),
+  /** `conversations.runtime_mode`, written even with no session. */
+  modes: new Map<string, string>(),
 }))
 
 vi.mock('../../src/main/db/database', () => ({
@@ -48,7 +56,7 @@ vi.mock('../../src/main/db/database', () => ({
   }),
   getConversationTitle: () => null,
   resolveRootThreadId: (id: string) => id,
-  getConversationRuntimeMode: () => null,
+  getConversationRuntimeMode: (id: string) => db.modes.get(id) ?? null,
   getConversationModel: () => null,
   getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
@@ -161,6 +169,7 @@ async function setup(childCount = 2) {
   db.wakes.length = 0
   db.held.clear()
   db.sessionIds.clear()
+  db.modes.clear()
   const host = new FakeHost()
   const adapter = new Adapter()
   const mcp = fakeMcp()
@@ -386,6 +395,20 @@ describe('a child with no session', () => {
       cwd: process.cwd(),
     })
     expect(registry['sessionAdapters'].has('child1')).toBe(true)
+  })
+
+  it('never starts it above the mode its parent granted', async () => {
+    const { host, adapter, registry } = await setup()
+    db.children[0]!.grantedMode = 'sandbox'
+    db.modes.set('child1', 'full-access')
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    await registry.deliverPeerMessage({
+      fromThreadId: 'parent1',
+      targetThreadId: 'child1',
+      text: 'Go on.',
+      initiator: 'agent',
+    })
+    expect(adapter.starts.filter((s) => s.threadId === 'child1').at(-1)).toMatchObject({ runtimeMode: 'sandbox' })
   })
 
   it('starts the same way for the row Resume, which had nothing to resume after a restart', async () => {
