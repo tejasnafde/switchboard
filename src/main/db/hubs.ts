@@ -760,6 +760,20 @@ export function lastHubWakeOf(childId: string): HubWakeRow | null {
     : local
 }
 
+/**
+ * The child's newest current wake is a report: it waits to be settled, not
+ * for room. A turn it started since makes that report old news (`stale_at`),
+ * so a child back at work is not one that waits.
+ */
+export function awaitsReportSettle(childId: string): boolean {
+  const r = getDb()
+    .prepare(
+      'SELECT kind FROM hub_wakes WHERE child_id = ? AND stale_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1',
+    )
+    .get(resolveRootThreadId(childId)) as { kind: string } | undefined
+  return r?.kind === 'report'
+}
+
 /** Chats and cards other than the child's own thread that work in `worktreePath` (a fork of the child, or a chat opened there). */
 export function otherWorktreeUsers(worktreePath: string, childId: string): number {
   const db = getDb()

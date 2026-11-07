@@ -82,6 +82,7 @@ import {
   lastHubWakes,
   markHubChildWakesStale,
   lastHubWakeOf,
+  awaitsReportSettle,
   getHubParent,
   countUnackedHubOutboxMessages,
   hubInstallId,
@@ -1779,7 +1780,13 @@ export class ProviderRegistry implements PeerToolHost {
       const sent = await this.sendChildResume(moved, limitedTurnId !== null)
       const carried = await this.resendHeldTurns(moved, held)
       const lost = held.length - carried
-      const summary = `Moved from ${fromName} to ${toName}.`
+      const lostText =
+        lost > 0
+          ? ` ${lost} message${lost === 1 ? '' : 's'} it held did not go out on the new account: send ${lost === 1 ? 'it' : 'them'} again.`
+          : ''
+      // In the row too, not only in the answer: a queued or automatic move
+      // has no answer for the parent to read.
+      const summary = `Moved from ${fromName} to ${toName}.` + lostText
       this.postSystemRow(
         parentId,
         'hubmoved',
@@ -1792,9 +1799,7 @@ export class ProviderRegistry implements PeerToolHost {
         `Moved ${child.title} from ${fromName} to ${toName}.` +
           (sent ? ' It goes on with its task there.' : ' The resume turn did not go out: send it a message.') +
           (carried > 0 ? ` The ${carried} message${carried === 1 ? '' : 's'} it held came with it.` : '') +
-          (lost > 0
-            ? ` ${lost} message${lost === 1 ? '' : 's'} it held did not go out on the new account: send ${lost === 1 ? 'it' : 'them'} again.`
-            : '') +
+          lostText +
           ' Tell the user what you moved and why.',
       )
     } finally {
@@ -1908,7 +1913,7 @@ export class ProviderRegistry implements PeerToolHost {
     if (!agentType) return
     // A child that reported is waiting to be settled, not waiting for room:
     // moving it would send it a resume turn and start work nobody asked for.
-    if (lastHubWakeOf(childId)?.kind === 'report') return
+    if (awaitsReportSettle(childId)) return
     const others = listProviderInstances().filter((i) => i.enabled && i.agentType === agentType && i.id !== currentId)
     if (others.length === 0) return
     this.autoMoveChecks.set(childId, Date.now())
@@ -1932,6 +1937,9 @@ export class ProviderRegistry implements PeerToolHost {
       atPercent,
     })
     if (!targetId) return
+    // The usage reads above are awaits: a turn can have ended and reported in
+    // them, and that child waits to be settled rather than for room.
+    if (awaitsReportSettle(childId)) return
     log.info('auto-move', { childId, from: currentId, to: targetId, usedPercent: current.usedPercent, atPercent })
     // The parent's own mode decides, as it does for its move_child call: a
     // parent in plan mode moves nothing, whether or not it runs right now

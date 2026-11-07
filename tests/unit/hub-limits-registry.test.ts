@@ -490,15 +490,21 @@ describe('move_child', () => {
 
     // child2 reports instead: it waits to be settled, so the auto-move leaves it.
     usage.percent.set('claude-a', 95)
+    event({ type: 'status', threadId: 'child2', status: 'running', newTurn: true })
     await mcp.opened
       .get('child2')!
       .find((t) => t.name === 'report_to_hub')!
       .call({ status: 'done', summary: 'All of it is done.' })
-    event({ type: 'status', threadId: 'child2', status: 'running', newTurn: true })
     event({ type: 'turn.completed', threadId: 'child2' })
     event({ type: 'status', threadId: 'child2', status: 'idle' })
     await vi.advanceTimersByTimeAsync(50)
     expect(getConversationProviderInstanceId('child2')).not.toBe('claude-b')
+
+    // It is back at work: the report is old news, so the next boundary moves it.
+    event({ type: 'status', threadId: 'child2', status: 'running', newTurn: true })
+    event({ type: 'turn.completed', threadId: 'child2' })
+    event({ type: 'status', threadId: 'child2', status: 'idle' })
+    await vi.waitFor(() => expect(getConversationProviderInstanceId('child2')).toBe('claude-b'))
   })
 
   it('runs a queued move when the agent exits on a usage limit instead of going idle', async () => {
