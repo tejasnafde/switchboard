@@ -38,8 +38,10 @@ export const PERF_THRESHOLDS = {
   'hub.stop': 0,
   'hub.reap': 0,
   'hub.resume-reaped': 0,
-  // Every move_child call, with its outcome (moved, or why not).
+  // Every move_child call, with its outcome (moved, queued for the turn end, or why not).
   'hub.move': 0,
+  // Every Resume on a child row, with its outcome.
+  'hub.resume': 0,
   // Every settle (children, removed, kept, stop failures, killed processes), and each list_children conflict scan.
   'hub.settle': 0,
   'hub.conflicts': 0,

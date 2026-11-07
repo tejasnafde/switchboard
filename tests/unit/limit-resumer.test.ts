@@ -203,10 +203,22 @@ describe('LimitResumer', () => {
 
   it('a turn that ends normally before the reset disarms the row', async () => {
     resumer.onTurnEnded('c1', limited(), 'turn1')
+    resumer.onTurnStarted('c1')
     resumer.onTurnEnded('c1', undefined, 'turn2')
     expect(getLimitResume('c1')).toMatchObject({ state: 'disarmed', disarmReason: 'ran' })
     await vi.advanceTimersByTimeAsync(10 * MIN)
     expect(host.sent).toEqual([])
+  })
+
+  it('stays armed when the limited turn itself ends again, and resumes at the reset', async () => {
+    resumer.onTurnStarted('c1')
+    resumer.onTurnEnded('c1', limited(), 'turn1')
+    // The agent exits on the limit: the end the registry writes for the dead
+    // query carries no limit, and no turn began after the arm.
+    resumer.onTurnEnded('c1', undefined, 'turn1')
+    expect(getLimitResume('c1')).toMatchObject({ state: 'armed' })
+    await vi.advanceTimersByTimeAsync(70 * MIN)
+    expect(host.sent).toEqual(['c1'])
   })
 
   it('arms once when one limited turn ends twice', () => {

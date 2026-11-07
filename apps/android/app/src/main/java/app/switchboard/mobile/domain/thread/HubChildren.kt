@@ -63,9 +63,10 @@ enum class ChildState(val wire: String, val label: String) {
     }
 }
 
+/** `Working` and `Limited` are the PARENT's own turn and limit, not its children's: the label says whose. */
 enum class ParentState(val wire: String, val label: String?) {
-    Working("working", "Working"),
-    Limited("limited", "Limited"),
+    Working("working", "This chat is working"),
+    Limited("limited", "This chat is limited"),
     UpdatesReady("updates_ready", "Updates ready"),
     Waiting("waiting", "Waiting for children"),
     Done("done", "Done"),

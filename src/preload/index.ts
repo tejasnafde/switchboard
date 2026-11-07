@@ -906,6 +906,18 @@ const api = {
     /** Stop all of a parent's open children and hold its updates; routed like `interruptHubChild`. */
     hubStopChildren: (parentFamilyIds: readonly string[], parentId: string): Promise<void> =>
       router.invokeOn(routingTable.resolveThread(parentFamilyIds), ProviderChannels.HUB_STOP_CHILDREN, parentId),
+    /** Resume one stopped child from its parent's list; routed like `interruptHubChild`. */
+    hubResumeChild: (
+      parentFamilyIds: readonly string[],
+      parentId: string,
+      childId: string,
+    ): Promise<{ ok: boolean; message?: string }> =>
+      router.invokeOn(
+        routingTable.resolveThread(parentFamilyIds),
+        ProviderChannels.HUB_RESUME_CHILD,
+        parentId,
+        childId,
+      ),
     /** Lift a parent's hold on its child updates and send them. */
     hubDeliverHeldWakes: (threadId: string): Promise<void> =>
       transport.invoke(ProviderChannels.HUB_DELIVER_HELD_WAKES, threadId),

@@ -592,7 +592,7 @@ export function ChatInput({
   useEffect(() => {
     if (!sessionId) return
     return registerComposer(sessionId, {
-      focus: () => richRef.current?.focus(),
+      focus: (atEnd) => richRef.current?.focus(atEnd),
     })
   }, [sessionId])
   const filePickerRef = useRef<HTMLInputElement>(null)

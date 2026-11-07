@@ -94,10 +94,21 @@ export class LimitResumer {
   /** Chats whose last turn ended on a usage limit: that turn's id and why it did not arm. */
   private readonly limited = new Map<
     string,
-    { turnId: string; resetAt: number | null; endedAt: number; skipped?: Exclude<ArmDecision, { arm: true }>['reason'] }
+    {
+      turnId: string
+      resetAt: number | null
+      endedAt: number
+      /** `turnSeq` when the row was armed: a later start means the chat ran again. */
+      armedSeq?: number
+      skipped?: Exclude<ArmDecision, { arm: true }>['reason']
+    }
   >()
   /** A resume turn on its way: when it started, and whether it reported an error. */
   private readonly resumed = new Map<string, { startedAt: number; failed: boolean }>()
+  /** The count each chat's last turn start had: a count above the arm's means it ran again. */
+  private readonly startedSeq = new Map<string, number>()
+  /** Counts turn starts across chats, so the comparison needs no clock. */
+  private turnSeq = 0
   private readonly firing = new Set<string>()
   /** Children whose resume waits for a run slot, with the request id it waits under. */
   private readonly slotWaiters = new Map<string, string>()
@@ -166,9 +177,11 @@ export class LimitResumer {
     }
 
     if (!usageLimit) {
+      // Read before the delete below, which takes the mark away.
+      const ranAgain = (this.startedSeq.get(id) ?? 0) > (this.limited.get(id)?.armedSeq ?? 0)
       const wasLimited = this.limited.delete(id)
       let cleared = false
-      if (row?.state === 'armed') cleared = disarmLimitResume(id, 'ran')
+      if (row?.state === 'armed' && ranAgain) cleared = disarmLimitResume(id, 'ran')
       else if (row?.state === 'gave_up') {
         setLimitResumeStreak(id, 0, false)
         cleared = true
@@ -185,7 +198,7 @@ export class LimitResumer {
     const previous = this.limited.get(id)
     if (previous && previous.resetAt === resetAt && this.now() - previous.endedAt < SAME_LIMIT_MS) return
     const limitedTurnId = turnId ?? `turn_${this.now()}`
-    const mark = { turnId: limitedTurnId, resetAt, endedAt: this.now() }
+    const mark = { turnId: limitedTurnId, resetAt, endedAt: this.now(), armedSeq: this.turnSeq }
     const decision = shouldArm({
       limitClass: 'usage_limit',
       resetAt,
@@ -218,6 +231,16 @@ export class LimitResumer {
     this.host.limited?.(id, this.view(id))
   }
 
+  /**
+   * The chat began a turn. An end with no limit disarms an armed row only
+   * when its turn began after the arm: the limited turn's own end carries no
+   * limit of its own (a late empty result, or the end written when the agent
+   * exits on the limit), and it used to disarm the resume it had just armed.
+   */
+  onTurnStarted(threadId: string): void {
+    this.startedSeq.set(resolveRootThreadId(threadId), ++this.turnSeq)
+  }
+
   /** The adapter reported an error: a resume turn on its way counts as failed. */
   onError(threadId: string): void {
     const pending = this.resumed.get(resolveRootThreadId(threadId))
@@ -245,6 +268,7 @@ export class LimitResumer {
     if (!disarmed) return
     this.clearTimer(id)
     this.slotWaiters.delete(id)
+    this.startedSeq.delete(id)
     log.info('limit resume disarmed', { conversationId: id, reason })
     this.notify(id, false)
   }

@@ -93,7 +93,8 @@ const log = createRendererLogger('chat:lexical')
 
 /** Imperative handle the host can grab to focus / insert pills. */
 export interface RichChatTextareaHandle {
-  focus: () => void
+  /** `atEnd` puts the caret after everything, for text another surface just appended. */
+  focus: (atEnd?: boolean) => void
   blur: () => void
   insertPill: (pill: DraftPill) => void
   /** Replace `[start..end]` of the plain text with `replacement`. */
@@ -700,8 +701,12 @@ const ImperativeHandlePlugin = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      focus: () => {
+      focus: (atEnd) => {
         editor.focus()
+        // The focus handler restores the caret saved before the append, which
+        // lands it in the middle of the old text. Discrete, so it commits
+        // inside the same event and the browser's selectionchange reads ours.
+        if (atEnd) editor.update(() => $getRoot().selectEnd(), { discrete: true })
       },
       blur: () => {
         editor.blur()

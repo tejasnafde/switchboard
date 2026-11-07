@@ -1,0 +1,83 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "hub-children-header-list",
+  "summary": "The desktop's children list moves from the strip above the composer into a popover on the chat header's Hub chip, which now shows a dot for the most urgent child and the number running; the strip is gone. The list drops a token figure it does not have (no more \"0k\"), reads \"2 updates waiting\" with Show now instead of \"2 updates held . Deliver\", names whose state it shows (\"This chat is working\", so a hub with no running child never reads Working), and offers Resume on a stopped child. Stop on a parent chat ends that chat's own turn only: Stop all is the one Stop that reaches the children. move_child moves a child to another account of its agent at any time, waiting for the end of a running turn rather than interrupting it. A child a usage limit stopped moves at once even when it holds messages it never read: the switch restarts its session, so the move sends those messages again behind the resume turn and says how many came with it. Also, the backend setting hub.autoMoveAtPercent (off unless set to 50-99) moves a child off an account that passes that share of its five-hour window. A parent can also wake a child whose session this process never ran: a message to it, or Resume on its row, starts the session again from the child's stored row, so a restart no longer leaves an idle child that the parent cannot reach and that cannot answer for itself. interrupt_child gives the parent back the text of every message that waited behind the stopped turn instead of dropping it in silence. Nudge leaves the caret after the chip it adds to the composer, where the words for the child go.",
+  "surfaces": {
+    "desktop": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default (HUB_CHILDREN_ENABLED true), after children ship on desktop, Expo and Android and one hub runs end to end on the beta channel.",
+      "evidence": [
+        "src/renderer/components/hub/HubChildrenList.tsx",
+        "src/renderer/components/hub/HubChip.tsx",
+        "src/renderer/components/hub/child-dot.ts",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "tests/unit/hub-children-list.test.ts",
+        "tests/unit/chat-header-hub-overflow.test.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "src/renderer/components/hub/hub-actions.ts",
+        "src/renderer/services/composer-registry.ts",
+        "src/renderer/components/chat/lexical/RichChatTextarea.tsx",
+        "tests/unit/hub-actions.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default. The Expo app already lists a parent's children behind a Hub row in the chat header area (HubChildrenRow.tsx), which is what this desktop change moves to, so the layout needs no phone work. It renders what the backend sends: the parent state label comes from the shared parentStateLabel, so \"This chat is working\" reaches it with this release. Still to come in the phone follow-ups, as before: Nudge, Resume, Show now for waiting updates, and the token figure (the phone row shows none today). A phone's Stop on a parent now ends that chat's own turn only, with Stop all unchanged."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default. Native Android already opens its children list from a Hub row (ThreadScreen HubChildRow), so the desktop layout change needs no phone work. Its ParentState labels are a Kotlin copy and are updated here to match the shared ones. Still to come in the phone follow-ups, as before: Nudge, Resume, Show now for waiting updates, and the token figure. A phone's Stop on a parent now ends that chat's own turn only, with Stop all unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default (HUB_CHILDREN_ENABLED true).",
+      "evidence": [
+        "src/shared/hub.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/mcp/hub-tools.ts",
+        "src/preload/index.ts",
+        "tests/unit/hub-rules.test.ts",
+        "tests/unit/hub-limits-registry.test.ts",
+        "tests/unit/hub-stop-registry.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No new table or column: the resume and the move read and write rows that already exist, and hub.autoMoveAtPercent is a settings row like the other hub.* settings. The stale-update column of this batch is recorded in hub-child-limit-update.json."
+    },
+    "updateRelease": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "The release that turns hub_children on by default. The change touches no package identity, signing, deep link or native module, and a phone with an older build keeps its own Hub row.",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/hub-children-list.test.ts: no token figure for an unknown, zero or sub-1000 count, \"This chat is working\" beside \"0 running\", the waiting-updates line with Show now and its hint, Resume on a paused, failed, blocked or limited child only (never on a remote one), and the chip dot taking the most urgent child state.",
+      "tests/unit/chat-header-hub-overflow.test.ts: the narrow header's Hub row names the children and the running count, and opens the same list in the \"...\" menu.",
+      "tests/unit/hub-stop-registry.test.ts: Stop on a parent ends its own turn only and writes no wake, while Stop all still stops six children in parallel, holds the parent and tells it.",
+      "tests/unit/hub-limits-registry.test.ts: Resume sends the hub's own turn to a stopped child and the limit path to a limited one, refuses a chat that is not a child and one that already works; move_child moves a child no limit stopped (with the hub's resume text, not the limit's), and a move during a turn runs at that turn's end.",
+      "tests/unit/hub-rules.test.ts: moveChildProblem with no limit, canResumeHubChild, readHubAutoMovePercent (off unless 50-99) and autoMoveTarget (emptiest account, the 10-point margin, no reading, nothing under the threshold).",
+      "tests/unit/hub-stop-registry.test.ts: a child with no session starts from its stored row for its parent's message and for the row Resume, never above the mode its parent granted, and not when it is archived or still starting; interrupt_child answers with the text of the messages the stop dropped.",
+      "tests/unit/hub-actions.test.ts: Nudge appends its chip to the draft it finds and focuses the composer at the end, after the chip."
+    ],
+    "hardware": [
+      "Packaged macOS build (electron-builder --dir, ad-hoc signed), started from a backup copy of the real 1.27 GB user database on 2026-11-07: the migration added hub_wakes.stale_at, 79 projects and 8 open children loaded, two demo children started in their own worktrees through the real start_children MCP tool, Stop on the parent left both children working (no 'child stopped' line), the header chip popover listed them with Open, Nudge, Stop and Stop all, Stop all held 5 updates ('5 updates waiting', Show now), Resume sent the hub's turn to a paused child, a running child's row dropped the stale wake text, move_child refused an unknown account, and quit and relaunch kept the children, their phases and the held updates.",
+      "The same packaged build reproduced the two defects fixed here before the fix: send_agent_message answered '\"Demo child one\" is not running. Open it, then send again.' and Resume answered 'has no running session. Open it to start one.' for a child that was idle after a relaunch."
+    ],
+    "notExercised": [
+      "Visual baselines pending: the hub screenshots move from the strip to the popover (hub-children, hub-remote-children replace hub-strip, hub-strip-narrow and hub-remote-strip). The stale baselines are deleted here; take the new PNGs from the Visual regressions (macOS) job's artifact.",
+      "The auto-move was not run against real accounts: the percent, the pick and the move are covered by unit tests and the move itself is the same path move_child uses.",
+      "No phone was built or run for this change: both read the same hub view and were checked by reading HubChildrenRow.tsx and HubChildren.kt."
+    ]
+  }
+}

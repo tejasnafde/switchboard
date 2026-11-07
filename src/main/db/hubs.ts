@@ -94,6 +94,8 @@ export function ensureHubSchema(db: Database.Database): void {
   if (!columns('hub_children').has('machine_id')) db.exec('ALTER TABLE hub_children ADD COLUMN machine_id TEXT')
   // A desktop wake imported from a child on another machine names that machine.
   if (!columns('hub_wakes').has('machine_id')) db.exec('ALTER TABLE hub_wakes ADD COLUMN machine_id TEXT')
+  // When the child ran again, so the wake stopped being its current news.
+  if (!columns('hub_wakes').has('stale_at')) db.exec('ALTER TABLE hub_wakes ADD COLUMN stale_at INTEGER')
   db.exec(`
     CREATE TABLE IF NOT EXISTS hub_outbox (
       id           TEXT PRIMARY KEY,
@@ -632,11 +634,33 @@ const toWake = (r: WakeDbRow): HubWakeRow => ({
   machineId: r.machine_id ?? null,
 })
 
-/** Each child's newest wake, delivered or not, keyed by child id; a parent stub's are in the outbox. */
-export function lastHubWakes(parentId: string): Map<string, { kind: HubWakeKind; summary: string }> {
+/**
+ * A child started a turn again, so the updates it sent before are old news:
+ * they stay stored and are still delivered, but `lastHubWakes` stops showing
+ * them. Returns how many stopped showing.
+ */
+export function markHubChildWakesStale(childId: string, at = Date.now()): number {
+  return getDb()
+    .prepare('UPDATE hub_wakes SET stale_at = ? WHERE child_id = ? AND stale_at IS NULL')
+    .run(at, resolveRootThreadId(childId)).changes
+}
+
+/**
+ * Each child's newest current wake, delivered or not, keyed by child id; a
+ * parent stub's are in the outbox. `includeStale` also counts the wakes a
+ * later turn of the child made old news, for a reader that asks what the
+ * child last told its parent at all (the idle reaper).
+ */
+export function lastHubWakes(
+  parentId: string,
+  opts: { includeStale?: boolean } = {},
+): Map<string, { kind: HubWakeKind; summary: string }> {
   const root = resolveRootThreadId(parentId)
   const rows = getDb()
-    .prepare('SELECT * FROM hub_wakes WHERE parent_id = ? ORDER BY created_at, id')
+    .prepare(
+      `SELECT * FROM hub_wakes WHERE parent_id = ? ${opts.includeStale ? '' : 'AND stale_at IS NULL'}
+       ORDER BY created_at, id`,
+    )
     .all(root) as WakeDbRow[]
   const all = [...rows.map(toWake), ...outboxWakes('parent_id', root)].sort(
     (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
@@ -734,6 +758,20 @@ export function lastHubWakeOf(childId: string): HubWakeRow | null {
   return outbox.createdAt > local.createdAt || (outbox.createdAt === local.createdAt && outbox.id > local.id)
     ? outbox
     : local
+}
+
+/**
+ * The child's newest current wake is a report: it waits to be settled, not
+ * for room. A turn it started since makes that report old news (`stale_at`),
+ * so a child back at work is not one that waits.
+ */
+export function awaitsReportSettle(childId: string): boolean {
+  const r = getDb()
+    .prepare(
+      'SELECT kind FROM hub_wakes WHERE child_id = ? AND stale_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1',
+    )
+    .get(resolveRootThreadId(childId)) as { kind: string } | undefined
+  return r?.kind === 'report'
 }
 
 /** Chats and cards other than the child's own thread that work in `worktreePath` (a fork of the child, or a chat opened there). */

@@ -48,7 +48,12 @@ import { sqliteTurnCheckpointStore } from '../db/turn-checkpoints'
 import { sqliteQueuedTurnRowStore, type QueuedTurnRowStore } from '../db/queued-turn-rows'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
-import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
+import {
+  getProviderInstanceFull,
+  listProviderInstances,
+  resolveProviderInstance,
+  listOauthDirsForAgent,
+} from '../db/provider-instances'
 import { MergeBackService } from '../conversations/merge-back'
 import { SqliteMergeBackStore } from '../db/merge-backs'
 import {
@@ -75,7 +80,9 @@ import {
   listOpenRemoteHubChildren,
   listPendingHubWakes,
   lastHubWakes,
+  markHubChildWakesStale,
   lastHubWakeOf,
+  awaitsReportSettle,
   getHubParent,
   countUnackedHubOutboxMessages,
   hubInstallId,
@@ -90,6 +97,7 @@ import {
   commitConversationExecutionRoot,
   setConversationRuntimeMode,
   getConversationModel,
+  getConversationProviderInstanceId,
   getConversationPendingHandoff,
   clearConversationPendingHandoff,
   bridgeAutoResumeBlocked,
@@ -264,6 +272,11 @@ import {
   formatHubUpdateMarker,
   hubChildrenEnabled,
   hubRemoteChildrenEnabled,
+  hubResumeTurn,
+  grantedMode,
+  autoMoveTarget,
+  readHubAutoMovePercent,
+  type HubAccountRoom,
   moveChildProblem,
   runSlotFree,
   type HubRunningChild,
@@ -356,6 +369,12 @@ const log = createLogger('provider:registry')
 
 /** What the agent is told when the user answers an approval card by sending a message. */
 export const SEND_DECLINES_APPROVAL_REASON = 'The user sent a new message instead of answering this request.'
+
+/** A child's session end this long after its usage-limited turn end is that limit, not a failure of its own. */
+const LIMIT_EXIT_GRACE_MS = 2 * 60_000
+
+/** How long the auto-move leaves an account's usage alone after it looked, per child. */
+const AUTO_MOVE_CHECK_MS = 5 * 60_000
 
 /** A child's events that can change its shown state, so its parent's view is read again. */
 const HUB_VIEW_EVENTS: ReadonlySet<RuntimeEvent['type']> = new Set([
@@ -517,11 +536,22 @@ export class ProviderRegistry implements PeerToolHost {
   /** Threads whose user pressed Stop while their session was still starting. */
   private stopRequestedDuringStart = new Set<string>()
   private managedSessionStarter: ((opts: SessionStartOpts) => Promise<ProviderSession>) | null = null
+  /**
+   * Moves waiting for a child's running turn to end (`move_child` mid-turn,
+   * and the auto-move), by child root id. Dropped when the child stops.
+   */
+  private readonly pendingMoves = new Map<string, { parentId: string; targetId: string }>()
+  /** When the auto-move last read a child's account, by child root id. */
+  private readonly autoMoveChecks = new Map<string, number>()
   /** Children `move_child` is moving, with the slot they take on the target account. */
   private readonly movingChildren = new Map<string, HubRunningChild>()
   /** The SWITCH_INSTANCE handler, for `move_child`. Set with the handlers. */
   private instanceSwitcher:
-    | ((threadId: string, input: ProviderInstanceSwitchRequest) => Promise<{ ok: boolean; message?: string }>)
+    | ((
+        threadId: string,
+        input: ProviderInstanceSwitchRequest,
+        options?: { allowHeldQueue?: boolean },
+      ) => Promise<{ ok: boolean; message?: string }>)
     | null = null
   private switchingSessions = new Set<string>()
   /** Turns that have claimed a thread but have not crossed the provider
@@ -1078,7 +1108,9 @@ export class ProviderRegistry implements PeerToolHost {
     return {
       idleReapMinutes: () => (this.hubChildrenOn() ? readHubSettings(getSetting).idleReapMinutes : null),
       openChildren: () => listHubChildrenInPhase('open').map((c) => ({ childId: c.childId, parentId: c.parentId })),
-      lastWakes: (parentId) => lastHubWakes(parentId),
+      // Stale ones too: a child that reported and then ran again is still a
+      // child that reported, and the reap frees its agent either way.
+      lastWakes: (parentId) => lastHubWakes(parentId, { includeStale: true }),
       liveThread: (childId) => this.liveSessionId(childId),
       idle: (threadId) =>
         this.sessionStatus.get(threadId) === 'idle' &&
@@ -1089,6 +1121,7 @@ export class ProviderRegistry implements PeerToolHost {
       subagentsRunning: (threadId) => this.hubSubagents.runningOf(threadId),
       agentPid: (threadId) => this.switchboardMcp?.agentPid(threadId) ?? null,
       stop: async (childId, threadId) => {
+        this.pendingMoves.delete(childId)
         const snapshot = await this.stopChildSession?.(threadId)
         if (!snapshot) return
         const { descriptor, credentials } = snapshot
@@ -1108,16 +1141,55 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   /**
-   * A reaped child resumes for its parent's message: its session starts again
-   * from where the reaper stopped it. Returns the id it runs under.
+   * The start options of an open child whose session this process never ran:
+   * after a restart nothing is in `reapedChildren`, so its stored row is the
+   * only source. Null when the row cannot name a folder, when the child is
+   * still starting (its launch owns the start) or when it runs elsewhere.
+   */
+  private storedChildStartOpts(childId: string): SessionStartOpts | null {
+    if (!this.hubChildrenOn()) return null
+    const child = getHubChild(childId)
+    if (!child || child.phase !== 'open' || child.machineId) return null
+    // An archived chat is out of the user's list; the auto-resume refuses one too.
+    if (isConversationArchived(childId)) return null
+    const row = getConversationById(childId)
+    const root = getConversationExecutionRoot(childId)
+    const cwd = root?.worktreePath ?? root?.projectPath ?? row?.project_path
+    if (!row || !cwd) return null
+    const stored = getConversationRuntimeMode(childId)
+    // Never above its grant: the mode row is written even with no session
+    // (`SET_RUNTIME_MODE`), and a restart must not widen what the child may do.
+    const mode = grantedMode(isRuntimeMode(stored) ? stored : undefined, child.grantedMode)
+    const model = getConversationModel(childId) ?? child.requestedModel
+    const instanceId = getConversationProviderInstanceId(childId) ?? child.providerInstanceId
+    return {
+      threadId: childId,
+      provider: providerKindFor(row.agent_type),
+      cwd,
+      runtimeMode: mode,
+      ...(model ? { model } : {}),
+      ...(row.session_id ? { resumeSessionId: row.session_id } : {}),
+      ...(instanceId ? { instanceId } : {}),
+    }
+  }
+
+  /**
+   * A child with no session resumes for its parent's message: a reaped one
+   * from where the reaper stopped it, and one this process never ran from its
+   * stored row, so a restart does not leave an idle child nobody can wake.
+   * Returns the id it runs under.
    */
   private async resumeReapedChild(childId: string, threadId: string): Promise<string> {
-    const opts = this.reapedChildren.get(childId)
+    // It never stopped, or the user opened it meanwhile. Before the stored
+    // row is read, so an ordinary message to a live child reads nothing.
+    const live = this.liveSessionId(childId)
+    if (live) {
+      this.reapedChildren.delete(childId)
+      return live
+    }
+    const opts = this.reapedChildren.get(childId) ?? this.storedChildStartOpts(childId)
     if (!opts) return threadId
     this.reapedChildren.delete(childId)
-    // The user opened it meanwhile.
-    const live = this.liveSessionId(childId)
-    if (live) return live
     const span = perfSpan('hub.resume-reaped', { childId })
     try {
       await this.startManagedSession(opts)
@@ -1144,6 +1216,7 @@ export class ProviderRegistry implements PeerToolHost {
     const remoteRow = getHubChild(root)
     if (remoteRow?.machineId) return this.stopRemoteChild(remoteRow, by)
     this.limitResumer?.disarm(root, by === 'user' ? 'stop' : by === 'parent' ? 'interrupt_child' : 'parent_stop')
+    this.pendingMoves.delete(root)
     this.closeAgentCards(root)
     const live = this.liveSessionId(root)
     const adapter = live ? this.sessionAdapters.get(live) : undefined
@@ -1244,11 +1317,17 @@ export class ProviderRegistry implements PeerToolHost {
    * or session ends: an error on that turn is `failed`, a full context window
    * `blocked`, and an end with no report and no subagent running `stopped`.
    * A usage limit gives none here. Adapters send the `error` before the end
-   * that carries the limit, so an error only marks the turn.
+   * that carries the limit, so an error only marks the turn. An agent that
+   * exits on the limit ends its session too; with the auto-resume armed that
+   * end is the limit again, not news of its own.
    */
-  private onChildEvent(event: RuntimeEvent): void {
+  private onChildEvent(event: RuntimeEvent, statusChanged = true): void {
     if (event.type === 'error') {
       this.turnErrors.set(event.threadId, event.message)
+      return
+    }
+    if (event.type === 'status' && event.status === 'running' && (statusChanged || event.newTurn)) {
+      this.clearChildUpdate(event.threadId)
       return
     }
     const sessionEnded = event.type === 'status' && (event.status === 'stopped' || event.status === 'error')
@@ -1262,12 +1341,13 @@ export class ProviderRegistry implements PeerToolHost {
     const parentId = this.hubStarter.parentOfOpenChild(childId)
     if (!parentId) return
     let wake: { kind: HubWakeKind; summary: string } | null = null
-    if (event.type === 'turn.completed' && event.limit)
+    if (event.type === 'turn.completed' && event.limit) {
+      if (event.limit.limitClass === 'usage_limit') this.limitedChildEnds.set(childId, Date.now())
       wake =
         event.limit.limitClass === 'context_full'
           ? { kind: 'blocked', summary: 'Blocked: its context window is full.' }
           : null
-    else if (error) wake = { kind: 'failed', summary: `Failed: ${oneLine(error)}` }
+    } else if (error) wake = { kind: 'failed', summary: `Failed: ${oneLine(error)}` }
     else if (event.type === 'status')
       wake =
         event.status === 'error'
@@ -1275,7 +1355,41 @@ export class ProviderRegistry implements PeerToolHost {
           : { kind: 'stopped', summary: 'Its session ended without a report.' }
     else if (!this.hasOutstandingTurn(event.threadId) && this.hubSubagents.runningOf(event.threadId) === 0)
       wake = { kind: 'stopped', summary: 'Ended its turn without a report.' }
+    // The agent exits on the usage limit it just hit: the `limited` wake told
+    // the parent already, and the child goes on at the reset. Only that exit,
+    // not any later crash of a waiting child, and before the claim, so the
+    // child's next real failure still gets one.
+    if (sessionEnded && this.exitBelongsToLimit(childId)) wake = null
     if (wake && this.hubNotes.claim(childId)) this.childWake(parentId, childId, wake.kind, wake.summary)
+  }
+
+  /**
+   * Whether a child's session end is the usage limit it just hit: its turn
+   * ended on the limit moments ago and its auto-resume is armed, so the end
+   * is the agent leaving, not news of its own.
+   */
+  private exitBelongsToLimit(childId: string): boolean {
+    const endedAt = this.limitedChildEnds.get(childId)
+    if (endedAt === undefined || Date.now() - endedAt > LIMIT_EXIT_GRACE_MS) return false
+    return this.limitResumer?.view(childId).kind === 'armed'
+  }
+
+  /**
+   * A child started a turn (its brief, a message from its parent, a move to
+   * another account, the resume at a reset): what it said before is old news,
+   * so the parent's children list and `list_children` show its state alone
+   * until its next update. The updates stay stored and are still delivered.
+   */
+  private clearChildUpdate(threadId: string): void {
+    if (!this.hubChildrenOn()) return
+    const childId = resolveRootThreadId(threadId)
+    const parentId = this.hubStarter.parentOfOpenChild(childId)
+    if (!parentId) return
+    try {
+      if (markHubChildWakesStale(childId) > 0) this.publishHubChange(parentId)
+    } catch (err) {
+      log.warn(`could not clear the last update of child ${childId}`, err)
+    }
   }
 
   /** `report_to_hub`: the child's summary and a pointer to the call in its transcript become a wake for its parent. */
@@ -1581,13 +1695,24 @@ export class ProviderRegistry implements PeerToolHost {
         `${agentLabel(toAgentProvider(descriptor.provider))} cannot keep its thread across accounts. ` +
           'Interrupt the child and start a new one with a brief that points to its transcript.',
       )
-    if (
-      this.preparingTurns.has(live) ||
-      this.hasOutstandingTurn(live) ||
-      this.sessionStatus.get(live) === 'running' ||
-      this.switchingSessions.has(live)
-    )
-      return refuse('busy', `${child.title} runs a turn or holds queued messages, so it cannot move now.`)
+    // Mid-turn: the move waits for the turn to end, rather than interrupting
+    // it. An interrupt would throw away the work of the running turn and make
+    // the agent repeat its tool calls on the new account. Not
+    // hasOutstandingTurn: a limit ends the turn but keeps the messages held
+    // behind it counted there, and those move with the child, so a child the
+    // limit stopped mid-turn would otherwise wait for an end that never comes.
+    const busy = () => this.runningOrPreparing(live) || this.switchingSessions.has(live)
+    const queueForTurnEnd = () => {
+      this.pendingMoves.set(child.childId, { parentId, targetId })
+      span.end({ outcome: 'queued' })
+      log.info('child move queued for the end of its turn', { childId: child.childId, parentId, targetId })
+      this.publishHubChange(parentId)
+      return toolText(
+        `${child.title} runs a turn, so it moves to ${target!.displayName} when that turn ends. ` +
+          'Nothing of the running turn is lost. Its chat shows the move.',
+      )
+    }
+    if (busy()) return queueForTurnEnd()
     const toName = target!.displayName
     // Not forced: a forced Claude reading can ask for the keychain password. The cache is 45 s old at most.
     let usage: ProviderUsage
@@ -1611,6 +1736,17 @@ export class ProviderRegistry implements PeerToolHost {
     )
       return refuse('no_slot', `${toName} has no free slot: other children run on it or under this chat.`)
 
+    // The usage reading and the slot check awaited: a message may have started
+    // a turn meanwhile, and the switch's stop would throw that turn away. A
+    // Stop all in that window takes the child out of the open set, and a
+    // stopped child is not moved and not started again.
+    if (busy()) return queueForTurnEnd()
+    if (this.hubStarter.parentOfOpenChild(child.childId) !== parentId || !this.liveSessionId(child.childId))
+      return refuse('stopped', `${child.title} stopped while ${toName} was being read, so it did not move.`)
+    // The switch stops the session, which drops the messages held behind the
+    // turn the limit ended. They are sent again on the new account, behind
+    // the resume turn, in the order the child would have read them.
+    const held = this.heldTurnBodies(live)
     // Holds the target's slot until the resume turn is out: the switch's own stop frees slots for waiters.
     this.movingChildren.set(child.childId, { parentId, providerInstanceId: targetId })
     try {
@@ -1618,21 +1754,39 @@ export class ProviderRegistry implements PeerToolHost {
       resumer.disarm(child.childId, 'moved')
       const fromName =
         (fromId && getProviderInstanceFull(fromId, { withEnv: false })?.displayName) || fromId || 'its account'
-      const switched = await this.instanceSwitcher(live, {
-        targetInstanceId: targetId,
-        expectedCurrentInstanceId: fromId,
-      })
-      if (!switched.ok)
+      const switched = await this.instanceSwitcher(
+        live,
+        { targetInstanceId: targetId, expectedCurrentInstanceId: fromId },
+        { allowHeldQueue: true },
+      )
+      if (!switched.ok) {
+        // The rollback started the old session again, so the messages the
+        // stop dropped go back on it. A switch that refused before it stopped
+        // anything still holds them, and sending them again would double them.
+        const back = this.liveSessionId(child.childId)
+        if (back && this.queuedTurns.list(back).length === 0) await this.resendHeldTurns(back, held)
         return refuse(
           'switch_failed',
           `Could not move ${child.title}: ${switched.message ?? 'the switch failed'}. Its auto-resume is off now; ` +
             'try the move again, or send it a message after the reset.',
         )
+      }
       updateHubChild(child.childId, { providerInstanceId: targetId, movedAfterLimitTurnId: limitedTurnId ?? undefined })
       this.postSystemRow(child.childId, 'rotation', `${ROTATION_MARKER_PREFIX} ${fromName} → ${toName}`)
       resumer.clearLimited(child.childId)
-      const sent = await this.sendLimitResume(this.liveSessionId(child.childId) ?? live)
-      const summary = `Moved from ${fromName} to ${toName}.`
+      // The resume turn is a new task: Switchboard may write one wake of its own for it again.
+      this.hubNotes.task(child.childId)
+      const moved = this.liveSessionId(child.childId) ?? live
+      const sent = await this.sendChildResume(moved, limitedTurnId !== null)
+      const carried = await this.resendHeldTurns(moved, held)
+      const lost = held.length - carried
+      const lostText =
+        lost > 0
+          ? ` ${lost} message${lost === 1 ? '' : 's'} it held did not go out on the new account: send ${lost === 1 ? 'it' : 'them'} again.`
+          : ''
+      // In the row too, not only in the answer: a queued or automatic move
+      // has no answer for the parent to read.
+      const summary = `Moved from ${fromName} to ${toName}.` + lostText
       this.postSystemRow(
         parentId,
         'hubmoved',
@@ -1644,11 +1798,154 @@ export class ProviderRegistry implements PeerToolHost {
       return toolText(
         `Moved ${child.title} from ${fromName} to ${toName}.` +
           (sent ? ' It goes on with its task there.' : ' The resume turn did not go out: send it a message.') +
+          (carried > 0 ? ` The ${carried} message${carried === 1 ? '' : 's'} it held came with it.` : '') +
+          lostText +
           ' Tell the user what you moved and why.',
       )
     } finally {
       this.movingChildren.delete(child.childId)
     }
+  }
+
+  /**
+   * Resume on a child row (`provider:hub-resume-child`): a child that stopped
+   * with work left goes on. An open child never hears from the user, so this
+   * is Switchboard's own turn, not a message. A limited child takes the
+   * auto-resume path instead, with its checks and its Limited row.
+   */
+  async resumeHubChild(childId: string): Promise<{ ok: boolean; message?: string }> {
+    if (!this.hubChildrenOn()) return { ok: false, message: 'Child chats are off.' }
+    const root = resolveRootThreadId(childId)
+    const child = getHubChild(root)
+    const parentId = this.hubStarter.parentOfOpenChild(root)
+    if (!child || !parentId) return { ok: false, message: 'That chat is not an open child chat.' }
+    if (child.machineId) return { ok: false, message: `${child.title} runs on another machine. Resume it there.` }
+    const span = perfSpan('hub.resume', { childId: root, parentId })
+    try {
+      // A reaped child has no session until its next message: start it again.
+      if (!this.liveSessionId(root)) await this.resumeReapedChild(root, root)
+      const live = this.liveSessionId(root)
+      if (!live || !this.sessionAdapters.has(live)) {
+        span.end({ outcome: 'no_session' })
+        return { ok: false, message: `${child.title} has no running session. Open it to start one.` }
+      }
+      if (this.runningOrPreparing(live)) {
+        span.end({ outcome: 'busy' })
+        return { ok: false, message: `${child.title} is already working.` }
+      }
+      if (this.limitResumer?.limitedTurnOf(root) != null) {
+        const result = await this.limitResumer.resumeNow(live)
+        span.end({ outcome: result.ok ? 'limit_resume' : 'limit_refused' })
+        this.publishHubChange(parentId)
+        return result.ok ? { ok: true } : { ok: false, message: result.message }
+      }
+      // A new task: Switchboard may write one wake of its own for it again.
+      this.hubNotes.task(root)
+      const sent = await this.sendChildResume(live, false)
+      span.end({ outcome: sent ? 'sent' : 'refused' })
+      this.publishHubChange(parentId)
+      return sent ? { ok: true } : { ok: false, message: `${child.title} did not take the resume turn.` }
+    } catch (err) {
+      span.end({ outcome: 'error' })
+      log.warn(`could not resume child ${root}`, err)
+      return { ok: false, message: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  /**
+   * A child's turn ended: a move that waited for this boundary runs now, and
+   * with `hub.autoMoveAtPercent` set, a child whose account passed that
+   * percent of its five-hour window moves to the account with the most room.
+   * Never throws into the event path.
+   */
+  private onChildTurnBoundary(threadId: string): void {
+    if (!this.hubChildrenOn()) return
+    const childId = resolveRootThreadId(threadId)
+    const open = this.hubStarter.parentOfOpenChild(childId) !== null
+    const pending = this.pendingMoves.get(childId)
+    if (pending || !open) {
+      // A child that settled or stopped meanwhile keeps no move waiting.
+      this.pendingMoves.delete(childId)
+      if (pending && open) void this.runQueuedMove(childId, pending)
+      return
+    }
+    void this.autoMoveChild(childId).catch((err) => log.warn(`the auto-move check of ${childId} failed`, err))
+  }
+
+  /** A queued `move_child`, run at the turn boundary it waited for. Its outcome reaches the parent's chat. */
+  private async runQueuedMove(childId: string, move: { parentId: string; targetId: string }): Promise<void> {
+    const title = getHubChild(childId)?.title ?? 'A child chat'
+    try {
+      // The parent's mode as it is now: a parent that went into plan mode
+      // while the turn ran moves nothing, as it would for a fresh call.
+      const result = await this.moveHubChild(move.parentId, this.chatRuntimeMode(move.parentId), childId, move.targetId)
+      if (!result.isError) return
+      const text = result.content.map((c) => ('text' in c ? c.text : '')).join(' ')
+      log.warn(`the queued move of ${childId} was refused: ${text}`)
+      this.postSystemRow(
+        move.parentId,
+        'hubmoved',
+        formatHubUpdateMarker([{ childId, title, kind: 'restart', summary: `Did not move: ${oneLine(text)}` }]),
+      )
+      this.publishHubChange(move.parentId)
+    } catch (err) {
+      log.warn(`the queued move of ${childId} failed`, err)
+    }
+  }
+
+  /**
+   * The auto-move: off unless `hub.autoMoveAtPercent` holds a percent. It
+   * reads the child's OWN account first (at most once per child per 5
+   * minutes, over the usage cache) and the other accounts only once that one
+   * passed the percent, so an idle hub reads no account it has no reason to.
+   */
+  private async autoMoveChild(childId: string): Promise<void> {
+    const atPercent = readHubAutoMovePercent(getSetting)
+    if (atPercent === null) return
+    const last = this.autoMoveChecks.get(childId) ?? 0
+    if (Date.now() - last < AUTO_MOVE_CHECK_MS) return
+    const live = this.liveSessionId(childId)
+    const descriptor = live ? this.sessionDescriptors.get(live) : undefined
+    const currentId = descriptor?.instanceId ?? null
+    const child = getHubChild(childId)
+    if (!live || !currentId || !child || child.machineId) return
+    const agentType = getProviderInstanceFull(currentId, { withEnv: false })?.agentType
+    if (!agentType) return
+    // A child that reported is waiting to be settled, not waiting for room:
+    // moving it would send it a resume turn and start work nobody asked for.
+    if (awaitsReportSettle(childId)) return
+    const others = listProviderInstances().filter((i) => i.enabled && i.agentType === agentType && i.id !== currentId)
+    if (others.length === 0) return
+    this.autoMoveChecks.set(childId, Date.now())
+    const { fetchInstanceUsage } = await import('./usage')
+    const room = async (instanceId: string): Promise<HubAccountRoom> => {
+      try {
+        const usage = await fetchInstanceUsage(instanceId)
+        const windows = usage.status === 'ok' ? usage.windows.filter((w) => w.kind === 'session') : []
+        const percents = windows.map((w) => w.usedPercent).filter((p): p is number => p !== null)
+        return { instanceId, usedPercent: percents.length > 0 ? Math.max(...percents) : null }
+      } catch (err) {
+        log.warn(`could not read the usage of ${instanceId} for the auto-move`, err)
+        return { instanceId, usedPercent: null }
+      }
+    }
+    const current = await room(currentId)
+    if (current.usedPercent === null || current.usedPercent < atPercent) return
+    const targetId = autoMoveTarget({
+      current,
+      others: await Promise.all(others.map((i) => room(i.id))),
+      atPercent,
+    })
+    if (!targetId) return
+    // The usage reads above are awaits: a turn can have ended and reported in
+    // them, and that child waits to be settled rather than for room.
+    if (awaitsReportSettle(childId)) return
+    log.info('auto-move', { childId, from: currentId, to: targetId, usedPercent: current.usedPercent, atPercent })
+    // The parent's own mode decides, as it does for its move_child call: a
+    // parent in plan mode moves nothing, whether or not it runs right now
+    // (`chatRuntimeMode` reads the stored mode of a chat with no session).
+    const result = await this.moveHubChild(child.parentId, this.chatRuntimeMode(child.parentId), childId, targetId)
+    if (result.isError) log.warn(`the auto-move of ${childId} was refused`)
   }
 
   /**
@@ -1692,10 +1989,42 @@ export class ProviderRegistry implements PeerToolHost {
     return place === 'elsewhere' ? { outcome: 'other_machine', text: HUB_REMOTE_MOVE_OTHER_MACHINE_TEXT } : null
   }
 
+  /**
+   * What a thread's held messages say, in queue order: a message whose body
+   * the registry did not record (one the adapter queued on its own) is left
+   * out, since sending a line meant for the chat would change what it says.
+   */
+  private heldTurnBodies(threadId: string): Array<{ label: string; body: string }> {
+    return this.queuedTurns.list(threadId).flatMap((turn) => {
+      const held = turn.failed ? undefined : this.queuedBodies.get(turn.messageId)
+      return held ? [{ label: turn.text, body: held.body }] : []
+    })
+  }
+
+  /** The messages a move carried over, sent again behind the new session's resume turn. */
+  private async resendHeldTurns(threadId: string, held: Array<{ label: string; body: string }>): Promise<number> {
+    let carried = 0
+    for (const message of held) {
+      if (await this.sendApprovalResultTurn(threadId, message.body, `moved-${randomUUID()}`, true, message.label))
+        carried += 1
+      else log.warn(`a held message of ${threadId} did not survive its move`)
+    }
+    return carried
+  }
+
   /** The resume turn, through the approval result path, then the held queue behind it in enqueue order. */
   private async sendLimitResume(threadId: string): Promise<boolean> {
     // A turn of its own, never queued behind the held messages it must run before.
     if (!(await this.sendApprovalResultTurn(threadId, limitResumeTurn(), `limit-resume-${randomUUID()}`, false)))
+      return false
+    await this.resumeQueuedTurns(threadId)
+    return true
+  }
+
+  /** The turn that starts a child's work again: the limit's text after a limit, else the hub's own. */
+  private async sendChildResume(threadId: string, afterLimit: boolean): Promise<boolean> {
+    if (afterLimit) return this.sendLimitResume(threadId)
+    if (!(await this.sendApprovalResultTurn(threadId, hubResumeTurn(), `hub-resume-${randomUUID()}`, false)))
       return false
     await this.resumeQueuedTurns(threadId)
     return true
@@ -1803,6 +2132,8 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly reapedChildren = new Map<string, SessionStartOpts>()
   /** The last error of each thread's running turn, for its child wake. */
   private readonly turnErrors = new Map<string, string>()
+  /** When each child's turn last ended on a usage limit, by root id: an exit right after it is that limit. */
+  private readonly limitedChildEnds = new Map<string, number>()
   /** Threads Switchboard is stopping: their exit is not the agent's. */
   private readonly stoppingThreads = new Set<string>()
   private stoppingAll = false
@@ -1873,6 +2204,12 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** Messages adapters hold until the running turn ends; see `QueuedTurnLedger`. */
   private queuedTurns = new QueuedTurnLedger()
+  /**
+   * What each held message says to the agent, by its row id. The ledger keeps
+   * the line the chat shows; this keeps the body, so a move that restarts the
+   * child's session can send the same messages again on the new account.
+   */
+  private readonly queuedBodies = new Map<string, { threadId: string; body: string }>()
   /** A fork's summaries waiting in its parent until the parent's next user turn. */
   private readonly mergeBacks = new MergeBackService({
     store: new SqliteMergeBackStore(() => getDb()),
@@ -3030,7 +3367,10 @@ export class ProviderRegistry implements PeerToolHost {
         if (startsNewProviderTurn) this.beginOutstandingTurn(targetThreadId)
         // Listed, promoted and cancelled by the id of the received row every client shows.
         const queuedId = delivery === 'queue' ? verdict.id : undefined
-        if (queuedId) this.queuedTurns.expect(queuedId, `From "${fromLabel}": ${input.text}`, Date.now())
+        if (queuedId) {
+          this.queuedTurns.expect(queuedId, `From "${fromLabel}": ${input.text}`, Date.now())
+          this.queuedBodies.set(queuedId, { threadId: targetThreadId, body })
+        }
         releasePreparation()
         // Set before the send, not after: the receiving model may call the peer
         // tool the moment its turn starts, and the depth has to already be there.
@@ -3385,6 +3725,7 @@ export class ProviderRegistry implements PeerToolHost {
     body: string,
     requestId: string,
     queueBehindTurn?: boolean,
+    queuedLabel = 'Switchboard: an approval result',
   ): Promise<boolean> {
     const adapter = this.sessionAdapters.get(threadId)
     if (!adapter) return false
@@ -3406,7 +3747,10 @@ export class ProviderRegistry implements PeerToolHost {
       const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, midTurn, delivery)
       if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
       const queuedId = midTurn ? `apr_${requestId}` : undefined
-      if (queuedId) this.queuedTurns.expect(queuedId, 'Switchboard: an approval result', Date.now())
+      if (queuedId) {
+        this.queuedTurns.expect(queuedId, queuedLabel, Date.now())
+        this.queuedBodies.set(queuedId, { threadId, body })
+      }
       release()
       try {
         await adapter.sendTurn(threadId, body, undefined, undefined, delivery, queuedId)
@@ -3457,7 +3801,7 @@ export class ProviderRegistry implements PeerToolHost {
     )
   }
 
-  /** The user's Stop on a chat: its turn, and with hub children on, its children too. */
+  /** The user's Stop on a chat: its own turn. On an open child it stops the child itself. */
   private async interruptChat(threadId: string): Promise<{ live: boolean }> {
     if (!this.hubChildrenOn()) return this.interruptOwnTurn(threadId)
     if (this.hubStarter.isOpenChild(threadId)) {
@@ -3465,9 +3809,11 @@ export class ProviderRegistry implements PeerToolHost {
         return this.interruptOwnTurn(threadId)
       return { live: await this.stopHubChild(threadId, 'user') }
     }
-    // Stop on a parent stops its children too, whether or not its own turn runs.
-    const [, own] = await Promise.all([this.stopHubChildren(threadId), this.interruptOwnTurn(threadId)])
-    return own
+    // A parent's Stop ends its own turn only: its children keep the work they
+    // are doing, and their updates still reach it, since a hub runs on its
+    // own. Stop all (`provider:hub-stop-children`) stops them and holds the
+    // updates until the user's next message or Show now.
+    return this.interruptOwnTurn(threadId)
   }
 
   private async interruptOwnTurn(threadId: string): Promise<{ live: boolean }> {
@@ -3856,6 +4202,14 @@ export class ProviderRegistry implements PeerToolHost {
                   if (!child || child.parentId !== chatId() || !isOpenChildPhase(child.phase))
                     return toolText('That is not an open child of this chat.', true)
                   if (child.machineId && !this.remoteControlOf(child)) return toolText(HUB_REMOTE_STOP_LATER_TEXT, true)
+                  // The stop drops what waits behind the turn, so the parent
+                  // is given the text back rather than losing it silently.
+                  // Under the id the session runs under, as the stop reads it:
+                  // the ledger is keyed by that id, not by the root. A child on
+                  // another machine holds its queue there, so none is named.
+                  const dropped = this.listQueuedTurns(this.liveSessionId(child.childId) ?? child.childId)
+                    .map((q) => q.text.trim())
+                    .filter(Boolean)
                   let ran: boolean
                   try {
                     ran = await this.stopHubChild(child.childId, 'parent')
@@ -3865,7 +4219,13 @@ export class ProviderRegistry implements PeerToolHost {
                       true,
                     )
                   }
-                  return toolText(ran ? `Stopped ${child.title}.` : `${child.title} had no running turn.`)
+                  const held =
+                    dropped.length === 0
+                      ? ''
+                      : ` ${dropped.length} message${dropped.length === 1 ? '' : 's'} waited behind its turn and did` +
+                        ` not run. Send ${dropped.length === 1 ? 'it' : 'them'} again when it goes on:\n` +
+                        dropped.map((text) => `- ${text}`).join('\n')
+                  return toolText((ran ? `Stopped ${child.title}.` : `${child.title} had no running turn.`) + held)
                 },
                 read: (args) =>
                   readChild(
@@ -4060,6 +4420,7 @@ export class ProviderRegistry implements PeerToolHost {
     if (event.type === 'turn.queued' || event.type === 'turn.dequeued' || event.type === 'turn.queue-held') {
       const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
       if (observed.releasesOutstandingTurn) this.finishOutstandingTurn(event.threadId)
+      if (event.type === 'turn.dequeued') this.queuedBodies.delete(event.messageId)
       this.trackQueuedRow(observed.event)
       // The ledger filled in the text as typed, after the masking in `publish`.
       event = this.secretRedaction.mask(observed.event).event
@@ -4214,8 +4575,20 @@ export class ProviderRegistry implements PeerToolHost {
       this.hubStarter.onTurnEnded(event.threadId)
     // A session that stops running may free a run slot a limited child waits for.
     if (event.type === 'status' && statusChanged && event.status !== 'running') this.limitResumer?.slotFreed()
+    // A turn began: only a turn begun after the arm disarms an auto-resume.
+    if (event.type === 'status' && statusChanged && event.status === 'running')
+      this.limitResumer?.onTurnStarted(event.threadId)
+    // A turn boundary of a child: a queued move runs, and the auto-move looks.
+    // `error` and `stopped` too: an agent that exits on a usage limit never
+    // reports idle, and a move queued behind that turn must not be stranded.
+    if (
+      event.type === 'status' &&
+      statusChanged &&
+      (event.status === 'idle' || event.status === 'error' || event.status === 'stopped')
+    )
+      this.onChildTurnBoundary(event.threadId)
     this.hubSubagents.observe(event)
-    this.onChildEvent(event)
+    this.onChildEvent(event, statusChanged)
     if (event.type === 'turn.completed') this.hubReaper.onTurnEnded(event.threadId)
     if (event.type === 'tool.started' && /report_to_hub$/.test(event.toolName))
       this.reportCalls.set(event.threadId, [...(this.reportCalls.get(event.threadId) ?? []), event.toolId])
@@ -4880,6 +5253,11 @@ export class ProviderRegistry implements PeerToolHost {
       }
       this.hubSubagents.clear(threadId)
       this.turnErrors.delete(threadId)
+      const root = resolveRootThreadId(threadId)
+      this.limitedChildEnds.delete(root)
+      this.autoMoveChecks.delete(root)
+      // A move waits for a turn of the session that is going away, not of the one after it.
+      this.pendingMoves.delete(root)
       this.switchFirstEventSpans.get(threadId)?.span.end({ outcome: 'stopped-before-event' })
       this.switchFirstEventSpans.delete(threadId)
       this.firstEventSpans.get(threadId)?.end({ outcome: 'stopped-before-event' })
@@ -4906,6 +5284,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.sessionCredentials.delete(threadId)
       this.outstandingTurns.delete(threadId)
       this.queuedTurns.clear(threadId)
+      for (const [id, held] of this.queuedBodies) if (held.threadId === threadId) this.queuedBodies.delete(id)
       this.turnDepth.delete(threadId)
       // Approval cards are not closed here: a profile switch or a relocation
       // restarts the session, and the cards are the chat's. A user stop closes them.
@@ -5370,254 +5749,261 @@ export class ProviderRegistry implements PeerToolHost {
 
     this.host.handle(ProviderChannels.START_SESSION, startSession)
 
-    this.host.handle(
-      ProviderChannels.SWITCH_INSTANCE,
-      (this.instanceSwitcher = async (threadId: string, input: ProviderInstanceSwitchRequest) => {
-        const switchSpan = perfSpan('provider.switch', { thread: threadId })
-        const switchTiming = { thread: threadId, stopMs: 0, compatibilityMs: 0, startMs: 0 }
-        const firstEventSpan = perfSpan('provider.switch.first-event', switchTiming)
-        let switched = false
+    // The third argument is the registry's own, never a client's: the handler
+    // below passes two, so only `move_child` can switch a child that holds
+    // messages behind the turn a usage limit ended.
+    this.instanceSwitcher = async (
+      threadId: string,
+      input: ProviderInstanceSwitchRequest,
+      options?: { allowHeldQueue?: boolean },
+    ) => {
+      const switchSpan = perfSpan('provider.switch', { thread: threadId })
+      const switchTiming = { thread: threadId, stopMs: 0, compatibilityMs: 0, startMs: 0 }
+      const firstEventSpan = perfSpan('provider.switch.first-event', switchTiming)
+      let switched = false
+      try {
+        const descriptor = this.sessionDescriptors.get(threadId)
+        const currentInstanceId = descriptor?.instanceId ?? null
+        const failure = (
+          code: string,
+          message: string,
+          rolledBack?: boolean,
+          reportedInstanceId: string | null = currentInstanceId,
+        ) => ({
+          ok: false as const,
+          code,
+          message,
+          currentInstanceId: reportedInstanceId,
+          ...(rolledBack === undefined ? {} : { rolledBack }),
+        })
+
+        if (!descriptor || !this.sessionAdapters.has(threadId)) {
+          return failure('context-unavailable', 'This thread is not attached to a live provider session')
+        }
+        // A relocation shares this flow's snapshot, gate and rollback path, so
+        // the two must exclude each other in BOTH directions. The coordinator
+        // already refuses to start while a switch holds the thread.
+        if (
+          this.switchingSessions.has(threadId) ||
+          this.startingSessions.has(threadId) ||
+          this.preparingTurns.has(threadId) ||
+          (!options?.allowHeldQueue && this.hasOutstandingTurn(threadId)) ||
+          this.sessionStatus.get(threadId) === 'running' ||
+          this.executionRoot?.isRelocating(threadId) ||
+          this.executionRoot?.hasQueued(threadId)
+        ) {
+          return failure('busy', 'Stop the current turn before switching profile')
+        }
+        if (input.expectedCurrentInstanceId !== currentInstanceId) {
+          return failure('stale-selection', 'The active profile changed on another client')
+        }
+        if (input.targetInstanceId === currentInstanceId) {
+          const current = getProviderInstanceFull(input.targetInstanceId)
+          return {
+            ok: true as const,
+            threadId,
+            provider: descriptor.provider,
+            previousInstanceId: currentInstanceId,
+            instanceId: currentInstanceId,
+            instanceName: current?.displayName ?? input.targetInstanceId,
+            continuity: 'not-needed' as const,
+          }
+        }
+
+        const agentType = toAgentProvider(descriptor.provider)
+        const target = getProviderInstanceFull(input.targetInstanceId)
+        const remoteTargetConfig =
+          (agentType === 'claude-code' || agentType === 'codex') &&
+          process.env.SWITCHBOARD_REMOTE &&
+          input.targetRemoteConfigDir
+            ? remoteProviderConfigDir(agentType, input.targetRemoteConfigDir)
+            : null
+        if (!remoteTargetConfig && (!target || !target.enabled || target.agentType !== agentType)) {
+          return failure('invalid-instance', 'That profile is unavailable for this provider')
+        }
+        if (speaksAcp(descriptor.provider)) {
+          return failure(
+            'unsupported-provider',
+            `${agentLabel(agentType)} cannot preserve an existing thread across profile changes yet`,
+          )
+        }
+
+        // Claim the thread before any transcript migration can await. Otherwise
+        // a second switch or a new turn can race the preflight and attach to the
+        // provider session that is about to be stopped.
+        this.switchingSessions.add(threadId)
         try {
-          const descriptor = this.sessionDescriptors.get(threadId)
-          const currentInstanceId = descriptor?.instanceId ?? null
-          const failure = (
-            code: string,
-            message: string,
-            rolledBack?: boolean,
-            reportedInstanceId: string | null = currentInstanceId,
-          ) => ({
-            ok: false as const,
-            code,
-            message,
-            currentInstanceId: reportedInstanceId,
-            ...(rolledBack === undefined ? {} : { rolledBack }),
-          })
-
-          if (!descriptor || !this.sessionAdapters.has(threadId)) {
-            return failure('context-unavailable', 'This thread is not attached to a live provider session')
+          const oldCredentials = this.sessionCredentials.get(threadId)
+          if (!oldCredentials) {
+            return failure('context-unavailable', 'The live profile credentials are unavailable for a safe rollback')
           }
-          // A relocation shares this flow's snapshot, gate and rollback path, so
-          // the two must exclude each other in BOTH directions. The coordinator
-          // already refuses to start while a switch holds the thread.
-          if (
-            this.switchingSessions.has(threadId) ||
-            this.startingSessions.has(threadId) ||
-            this.preparingTurns.has(threadId) ||
-            this.hasOutstandingTurn(threadId) ||
-            this.sessionStatus.get(threadId) === 'running' ||
-            this.executionRoot?.isRelocating(threadId) ||
-            this.executionRoot?.hasQueued(threadId)
-          ) {
-            return failure('busy', 'Stop the current turn before switching profile')
+          let oldOpts: SessionStartOpts = {
+            threadId,
+            provider: descriptor.provider,
+            cwd: descriptor.cwd,
+            model: descriptor.model,
+            runtimeMode: descriptor.runtimeMode,
+            resumeSessionId: descriptor.sessionId,
+            instanceId: currentInstanceId ?? undefined,
+            remoteConfigDir: oldCredentials.remoteConfigDir,
           }
-          if (input.expectedCurrentInstanceId !== currentInstanceId) {
-            return failure('stale-selection', 'The active profile changed on another client')
+          const targetInstanceId = input.targetInstanceId
+          const targetInstanceName = target?.displayName ?? input.targetInstanceName ?? targetInstanceId
+          let targetOpts: SessionStartOpts = {
+            ...oldOpts,
+            instanceId: targetInstanceId,
+            ...(input.targetRemoteConfigDir ? { remoteConfigDir: input.targetRemoteConfigDir } : {}),
           }
-          if (input.targetInstanceId === currentInstanceId) {
-            const current = getProviderInstanceFull(input.targetInstanceId)
-            return {
-              ok: true as const,
-              threadId,
-              provider: descriptor.provider,
-              previousInstanceId: currentInstanceId,
-              instanceId: currentInstanceId,
-              instanceName: current?.displayName ?? input.targetInstanceId,
-              continuity: 'not-needed' as const,
-            }
-          }
-
-          const agentType = toAgentProvider(descriptor.provider)
-          const target = getProviderInstanceFull(input.targetInstanceId)
-          const remoteTargetConfig =
-            (agentType === 'claude-code' || agentType === 'codex') &&
-            process.env.SWITCHBOARD_REMOTE &&
-            input.targetRemoteConfigDir
-              ? remoteProviderConfigDir(agentType, input.targetRemoteConfigDir)
+          const targetEventGate: ProviderEventGate = { state: 'staging', events: [] }
+          const oldRemoteConfig =
+            oldCredentials.remoteConfigDir && (agentType === 'claude-code' || agentType === 'codex')
+              ? remoteProviderConfigDir(agentType, oldCredentials.remoteConfigDir)
               : null
-          if (!remoteTargetConfig && (!target || !target.enabled || target.agentType !== agentType)) {
-            return failure('invalid-instance', 'That profile is unavailable for this provider')
-          }
-          if (speaksAcp(descriptor.provider)) {
+          const codexDefaultDir = remoteProviderConfigDir('codex', undefined)
+          const startFresh = input.onContextConflict === 'start-fresh'
+          try {
+            const stopStart = performance.now()
+            const stopped = await stopSession(threadId)
+            switchTiming.stopMs = performance.now() - stopStart
+            if (!stopped) throw new Error('The source provider session disappeared during the switch')
+            oldOpts = {
+              ...oldOpts,
+              resumeSessionId: stopped.descriptor.sessionId,
+            }
+            targetOpts = startFresh
+              ? { ...targetOpts, resumeSessionId: undefined }
+              : { ...targetOpts, resumeSessionId: stopped.descriptor.sessionId }
+          } catch (stopError) {
+            this.publish({ type: 'status', threadId, status: 'error' })
             return failure(
-              'unsupported-provider',
-              `${agentLabel(agentType)} cannot preserve an existing thread across profile changes yet`,
+              'target-start-failed',
+              stopError instanceof Error ? stopError.message : String(stopError),
+              false,
             )
           }
 
-          // Claim the thread before any transcript migration can await. Otherwise
-          // a second switch or a new turn can race the preflight and attach to the
-          // provider session that is about to be stopped.
-          this.switchingSessions.add(threadId)
-          try {
-            const oldCredentials = this.sessionCredentials.get(threadId)
-            if (!oldCredentials) {
-              return failure('context-unavailable', 'The live profile credentials are unavailable for a safe rollback')
-            }
-            let oldOpts: SessionStartOpts = {
-              threadId,
-              provider: descriptor.provider,
-              cwd: descriptor.cwd,
-              model: descriptor.model,
-              runtimeMode: descriptor.runtimeMode,
-              resumeSessionId: descriptor.sessionId,
-              instanceId: currentInstanceId ?? undefined,
-              remoteConfigDir: oldCredentials.remoteConfigDir,
-            }
-            const targetInstanceId = input.targetInstanceId
-            const targetInstanceName = target?.displayName ?? input.targetInstanceName ?? targetInstanceId
-            let targetOpts: SessionStartOpts = {
-              ...oldOpts,
-              instanceId: targetInstanceId,
-              ...(input.targetRemoteConfigDir ? { remoteConfigDir: input.targetRemoteConfigDir } : {}),
-            }
-            const targetEventGate: ProviderEventGate = { state: 'staging', events: [] }
-            const oldRemoteConfig =
-              oldCredentials.remoteConfigDir && (agentType === 'claude-code' || agentType === 'codex')
-                ? remoteProviderConfigDir(agentType, oldCredentials.remoteConfigDir)
-                : null
-            const codexDefaultDir = remoteProviderConfigDir('codex', undefined)
-            const startFresh = input.onContextConflict === 'start-fresh'
-            try {
-              const stopStart = performance.now()
-              const stopped = await stopSession(threadId)
-              switchTiming.stopMs = performance.now() - stopStart
-              if (!stopped) throw new Error('The source provider session disappeared during the switch')
-              oldOpts = {
-                ...oldOpts,
-                resumeSessionId: stopped.descriptor.sessionId,
-              }
-              targetOpts = startFresh
-                ? { ...targetOpts, resumeSessionId: undefined }
-                : { ...targetOpts, resumeSessionId: stopped.descriptor.sessionId }
-            } catch (stopError) {
-              this.publish({ type: 'status', threadId, status: 'error' })
-              return failure(
-                'target-start-failed',
-                stopError instanceof Error ? stopError.message : String(stopError),
-                false,
-              )
-            }
-
-            if (!startFresh && oldOpts.resumeSessionId) {
-              const compatibilityStart = performance.now()
-              const preparation =
-                descriptor.provider === 'claude'
-                  ? await prepareClaudeProfileSwitch({
-                      sessionId: oldOpts.resumeSessionId,
-                      cwd: descriptor.cwd,
-                      fromDir: oldRemoteConfig ?? oldCredentials.resolvedOauthDir ?? defaultClaudeDir(),
-                      toDir: remoteTargetConfig ?? target?.oauthDir ?? defaultClaudeDir(),
-                    })
-                  : await prepareCodexProfileSwitch({
-                      sessionId: oldOpts.resumeSessionId,
-                      fromDir: oldRemoteConfig ?? oldCredentials.resolvedOauthDir ?? codexDefaultDir,
-                      toDir: remoteTargetConfig ?? target?.oauthDir ?? codexDefaultDir,
-                    })
-              switchTiming.compatibilityMs = performance.now() - compatibilityStart
-              if (!preparation.ok) {
-                try {
-                  await startSession(oldOpts, true, undefined, oldCredentials)
-                  const conflict =
-                    preparation.reason === 'context-conflict' || preparation.reason === 'concurrent-modification'
-                  return failure(conflict ? 'context-conflict' : 'context-preparation-failed', preparation.detail, true)
-                } catch (rollbackError) {
-                  this.publish({ type: 'status', threadId, status: 'error' })
-                  return failure(
-                    'rollback-failed',
-                    `Context preparation failed: ${preparation.detail}. Rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
-                    false,
-                    null,
-                  )
-                }
-              }
-            }
-
-            const continuity = startFresh
-              ? ('degraded' as const)
-              : oldOpts.resumeSessionId
-                ? ('preserved' as const)
-                : ('not-needed' as const)
-            try {
-              const startStart = performance.now()
-              this.switchFirstEventSpans.set(threadId, { span: firstEventSpan, startAt: startStart })
-              const targetSession = await startSession(targetOpts, false, targetEventGate)
-              switchTiming.startMs = performance.now() - startStart
-              commitConversationProviderSwitch({
-                conversationId: threadId,
-                provider: agentType,
-                providerInstanceId: targetInstanceId,
-                providerSessionId: targetSession.sessionId ?? null,
-                ...(startFresh ? { pendingHandoffFrom: agentType } : {}),
-              })
-            } catch (targetError) {
-              targetEventGate.state = 'discarded'
-              targetEventGate.events.length = 0
-              await stopSession(threadId).catch((stopErr) => {
-                log.warn(`cleanup stopSession(${threadId}) failed after a failed provider switch`, stopErr)
-              })
+          if (!startFresh && oldOpts.resumeSessionId) {
+            const compatibilityStart = performance.now()
+            const preparation =
+              descriptor.provider === 'claude'
+                ? await prepareClaudeProfileSwitch({
+                    sessionId: oldOpts.resumeSessionId,
+                    cwd: descriptor.cwd,
+                    fromDir: oldRemoteConfig ?? oldCredentials.resolvedOauthDir ?? defaultClaudeDir(),
+                    toDir: remoteTargetConfig ?? target?.oauthDir ?? defaultClaudeDir(),
+                  })
+                : await prepareCodexProfileSwitch({
+                    sessionId: oldOpts.resumeSessionId,
+                    fromDir: oldRemoteConfig ?? oldCredentials.resolvedOauthDir ?? codexDefaultDir,
+                    toDir: remoteTargetConfig ?? target?.oauthDir ?? codexDefaultDir,
+                  })
+            switchTiming.compatibilityMs = performance.now() - compatibilityStart
+            if (!preparation.ok) {
               try {
                 await startSession(oldOpts, true, undefined, oldCredentials)
-                return failure(
-                  'target-start-failed',
-                  targetError instanceof Error ? targetError.message : String(targetError),
-                  true,
-                )
+                const conflict =
+                  preparation.reason === 'context-conflict' || preparation.reason === 'concurrent-modification'
+                return failure(conflict ? 'context-conflict' : 'context-preparation-failed', preparation.detail, true)
               } catch (rollbackError) {
                 this.publish({ type: 'status', threadId, status: 'error' })
-                this.publish({
-                  type: 'session.provider',
-                  threadId,
-                  provider: descriptor.provider,
-                  instanceId: null,
-                  instanceName: null,
-                })
                 return failure(
                   'rollback-failed',
-                  `Target failed: ${targetError instanceof Error ? targetError.message : String(targetError)}. Rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+                  `Context preparation failed: ${preparation.detail}. Rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
                   false,
                   null,
                 )
               }
             }
+          }
 
-            targetEventGate.state = 'flushing'
-            while (targetEventGate.events.length > 0) {
-              const event = targetEventGate.events.shift()
-              if (event) this.publishAdapterEvent(event, agentType, targetInstanceId)
-            }
-            targetEventGate.state = 'committed'
-            switched = true
-
-            this.publish({
-              type: 'session.provider',
-              threadId,
-              provider: descriptor.provider,
-              instanceId: targetInstanceId,
-              instanceName: targetInstanceName,
+          const continuity = startFresh
+            ? ('degraded' as const)
+            : oldOpts.resumeSessionId
+              ? ('preserved' as const)
+              : ('not-needed' as const)
+          try {
+            const startStart = performance.now()
+            this.switchFirstEventSpans.set(threadId, { span: firstEventSpan, startAt: startStart })
+            const targetSession = await startSession(targetOpts, false, targetEventGate)
+            switchTiming.startMs = performance.now() - startStart
+            commitConversationProviderSwitch({
+              conversationId: threadId,
+              provider: agentType,
+              providerInstanceId: targetInstanceId,
+              providerSessionId: targetSession.sessionId ?? null,
+              ...(startFresh ? { pendingHandoffFrom: agentType } : {}),
             })
-            return {
-              ok: true as const,
-              threadId,
-              provider: descriptor.provider,
-              previousInstanceId: currentInstanceId,
-              instanceId: targetInstanceId,
-              instanceName: targetInstanceName,
-              continuity,
+          } catch (targetError) {
+            targetEventGate.state = 'discarded'
+            targetEventGate.events.length = 0
+            await stopSession(threadId).catch((stopErr) => {
+              log.warn(`cleanup stopSession(${threadId}) failed after a failed provider switch`, stopErr)
+            })
+            try {
+              await startSession(oldOpts, true, undefined, oldCredentials)
+              return failure(
+                'target-start-failed',
+                targetError instanceof Error ? targetError.message : String(targetError),
+                true,
+              )
+            } catch (rollbackError) {
+              this.publish({ type: 'status', threadId, status: 'error' })
+              this.publish({
+                type: 'session.provider',
+                threadId,
+                provider: descriptor.provider,
+                instanceId: null,
+                instanceName: null,
+              })
+              return failure(
+                'rollback-failed',
+                `Target failed: ${targetError instanceof Error ? targetError.message : String(targetError)}. Rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+                false,
+                null,
+              )
             }
-          } finally {
-            this.switchingSessions.delete(threadId)
-            // Committed or rolled back, results answered during the switch go out now.
-            this.flushHeldApprovalResultsLater(threadId)
+          }
+
+          targetEventGate.state = 'flushing'
+          while (targetEventGate.events.length > 0) {
+            const event = targetEventGate.events.shift()
+            if (event) this.publishAdapterEvent(event, agentType, targetInstanceId)
+          }
+          targetEventGate.state = 'committed'
+          switched = true
+
+          this.publish({
+            type: 'session.provider',
+            threadId,
+            provider: descriptor.provider,
+            instanceId: targetInstanceId,
+            instanceName: targetInstanceName,
+          })
+          return {
+            ok: true as const,
+            threadId,
+            provider: descriptor.provider,
+            previousInstanceId: currentInstanceId,
+            instanceId: targetInstanceId,
+            instanceName: targetInstanceName,
+            continuity,
           }
         } finally {
-          switchSpan.end(switchTiming)
-          if (!switched) {
-            firstEventSpan.end({ outcome: 'not-switched' })
-            if (this.switchFirstEventSpans.get(threadId)?.span === firstEventSpan)
-              this.switchFirstEventSpans.delete(threadId)
-          }
+          this.switchingSessions.delete(threadId)
+          // Committed or rolled back, results answered during the switch go out now.
+          this.flushHeldApprovalResultsLater(threadId)
         }
-      }),
+      } finally {
+        switchSpan.end(switchTiming)
+        if (!switched) {
+          firstEventSpan.end({ outcome: 'not-switched' })
+          if (this.switchFirstEventSpans.get(threadId)?.span === firstEventSpan)
+            this.switchFirstEventSpans.delete(threadId)
+        }
+      }
+    }
+    this.host.handle(ProviderChannels.SWITCH_INSTANCE, (threadId: string, input: ProviderInstanceSwitchRequest) =>
+      this.instanceSwitcher!(threadId, input),
     )
 
     this.host.handle(
@@ -5914,6 +6300,13 @@ export class ProviderRegistry implements PeerToolHost {
       if (typeof childId !== 'string' || this.hubStarter.parentOfOpenChild(childId) !== resolveRootThreadId(parentId))
         throw new Error('That is not an open child of this chat.')
       await this.stopHubChild(childId, 'user')
+    })
+    this.host.handle(ProviderChannels.HUB_RESUME_CHILD, async (parentId: string, childId: string) => {
+      if (typeof parentId !== 'string' || typeof childId !== 'string' || !this.hubChildrenOn())
+        return { ok: false, message: 'Child chats are off.' }
+      if (this.hubStarter.parentOfOpenChild(childId) !== resolveRootThreadId(parentId))
+        throw new Error('That is not an open child of this chat.')
+      return this.resumeHubChild(childId)
     })
     this.host.handle(ProviderChannels.HUB_DELIVER_HELD_WAKES, (threadId: string) => {
       if (typeof threadId !== 'string' || !this.hubChildrenOn()) return
