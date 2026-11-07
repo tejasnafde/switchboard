@@ -135,13 +135,12 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
 
   const accent = effectiveInstance?.accentColor ?? DEFAULT_PICK_ACCENT
-  const initials = effectiveInstance ? providerInstanceInitials(effectiveInstance.displayName) : '··'
   // Computed from the RAW requested instanceId (not `effectiveInstance.id`,
   // which is already post-fallback and so always a member of `instances`) -
-  // this is what lets both the badge and the rail stay visible when that id
+  // this is what lets both the account and the rail stay visible when that id
   // no longer names an enabled instance (deleted/disabled elsewhere).
   const showRail = shouldShowInstanceRail(instances, instanceId)
-  const showInstanceBadge = showRail
+  const showAccount = showRail
 
   // Trigger label: "Claude · Sonnet 5", the short name; the title keeps the
   // full id. An unpinned session shows the model the backend resolved to,
@@ -175,20 +174,22 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             </>
           ) : (
             <>
-              {/* The agent's own mark; the account initials ride its corner
-                  only when this agent has more than one account. */}
+              {/* The agent's own mark. A dot in the account's accent colour
+                  rides its corner only when this agent has more than one
+                  account AND the account name is not beside it: below the
+                  680 px step that name is sr-only, so the dot is the only
+                  sign of which account the chat runs on. The name itself
+                  stays in the button title at every width. */}
               <span aria-hidden className="relative inline-flex size-[18px] shrink-0 items-center justify-center">
                 <AgentMark agent={agentType} size={14} className="text-[var(--text-primary)]" />
-                {showInstanceBadge && (
-                  <span className="absolute -right-[3px] -bottom-[3px] inline-flex h-[10px] min-w-[10px] items-center justify-center rounded-full bg-[var(--pick-accent)] px-[1px] text-[7px] font-[700] leading-none tracking-[0.02em] text-[var(--pick-ink)]">
-                    {initials}
-                  </span>
+                {showAccount && (
+                  <span className="absolute right-0 bottom-0 hidden size-[6px] rounded-full bg-[var(--pick-accent)] shadow-[0_0_0_1px_var(--bg-tertiary)] @max-[680px]/toolbar:block" />
                 )}
               </span>
               {/* A narrow composer footer shows the model only (ui/toolbar-steps.ts). */}
               <span className="truncate font-[500] text-[var(--text-primary)] @max-[680px]/toolbar:sr-only">
                 {agentShortLabel(agentType)}
-                {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
+                {showAccount && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
               </span>
               <span className="whitespace-nowrap text-[var(--text-muted)] @max-[680px]/toolbar:hidden">·</span>
               <span className="truncate text-[var(--text-secondary)]">{modelLabel}</span>

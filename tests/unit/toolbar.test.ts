@@ -80,6 +80,25 @@ describe('toolbar container queries', () => {
     expect(read('chat/UnifiedProviderPicker.tsx')).toContain('@max-[680px]/toolbar:hidden')
   })
 
+  // The composer chip writes " · <account>" beside the agent mark, so a
+  // corner badge there repeated the name and, at 10 px on a 14 px mark, read
+  // as a broken chip. The dot is kept for the one width that drops the name.
+  it('show the account dot only below the step that hides the account name', () => {
+    const picker = read('chat/UnifiedProviderPicker.tsx')
+    expect(picker).toContain('@max-[680px]/toolbar:sr-only')
+    const dot = picker.match(/\{showAccount && \(\s*(<span[^>]*\/>)\s*\)\}/)
+    expect(dot).not.toBeNull()
+    const [, markup] = dot as RegExpMatchArray
+    // Self-closing: a dot, never the initials the label already spells out.
+    expect(markup).toMatch(/\bhidden\b/)
+    expect(markup).toContain('@max-[680px]/toolbar:block')
+    // About 40% of the 14 px mark, ringed in the chip's own background so it
+    // reads as a separate dot, in the corner and clear of the mark's centre.
+    expect(markup).toContain('size-[6px]')
+    expect(markup).toContain('shadow-[0_0_0_1px_var(--bg-tertiary)]')
+    expect(markup).toContain('right-0 bottom-0')
+  })
+
   it('keep the row on one line', () => {
     expect(toolbar).toContain("'@container/toolbar flex items-center'")
     expect(footer).toContain('flex-nowrap')

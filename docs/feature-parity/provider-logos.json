@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "provider-logos",
-  "summary": "Draw each agent's own mark, in one colour, wherever an app lists or picks a chat: the desktop's sidebar rows and Recents, the composer chip and the agent tabs, Cmd+P, Cmd+Shift+F, hub child and batch rows, kanban cards and the reviews linked-chat card; the Expo app's conversation rows; and the native Android browse rows. One data file (shared/agent-marks) feeds all three: the desktop and Expo read it directly, Android through vector drawables generated from it.",
+  "summary": "Draw each agent's own mark, in one colour, wherever an app lists or picks a chat: the desktop's sidebar rows and Recents, the composer chip and the agent tabs, Cmd+P, Cmd+Shift+F, hub child and batch rows, kanban cards and the reviews linked-chat card; the Expo app's conversation rows; and the native Android browse rows. One data file (shared/agent-marks) feeds all three: the desktop and Expo read it directly, Android through vector drawables generated from it. On the desktop's composer chip the account rides the mark as a small dot only below the 680 px toolbar step, where the chip drops the account name it otherwise writes out in text.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -18,7 +18,8 @@
         "src/renderer/components/kanban/KanbanView.tsx",
         "src/renderer/components/reviews/PrLinkedChats.tsx",
         "src/renderer/styles/global.css",
-        "tests/unit/agent-marks.test.ts"
+        "tests/unit/agent-marks.test.ts",
+        "tests/unit/toolbar.test.ts"
       ]
     },
     "reactNativeIos": {
