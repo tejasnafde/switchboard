@@ -32,7 +32,9 @@ export async function nudgeChild(parent: HubChatRef, child: HubChatRef): Promise
     content: hubNudgeContent(child),
   })
   drafts.appendDraft(sessionId, `[[pill:${pillId}]] `)
-  requestAnimationFrame(() => focusComposer(sessionId))
+  // After the chip, which is where the words for the child go. Without this
+  // the composer restores the caret it had before the chip was appended.
+  requestAnimationFrame(() => focusComposer(sessionId, true))
 }
 
 /** An archive the backend refused (a chat with child chats waits on its settle card): say why. */

@@ -225,12 +225,15 @@ export function runSlotFree(
   return sameInstance < perInstance && sameParent < perParent
 }
 
-// ─── Moving a limited child ─────────────────────────────────────
+// ─── Moving a child to another account ──────────────────────────
 
 /**
- * Why `move_child` may not move a child to `target` now, or null. The usage
- * reading of the target and its run slot are checked after this, since both
- * need I/O. `agent` and `target.agent` are agent kinds (`claude`, `codex`).
+ * Why `move_child` may not move a child to `target` now, or null. A child
+ * moves at any time, not only after a usage limit (2026-11-07): a limited
+ * child moves once per limit, and any other child moves whenever its turn
+ * ends. The usage reading of the target and its run slot are checked after
+ * this, since both need I/O. `agent` and `target.agent` are agent kinds
+ * (`claude`, `codex`).
  */
 export function moveChildProblem(m: {
   parentMode: RuntimeMode
@@ -243,8 +246,7 @@ export function moveChildProblem(m: {
   target: { agent: string; enabled: boolean; name: string } | null
 }): string | null {
   if (m.parentMode === 'plan') return 'Plan mode does not move child chats.'
-  if (m.limitedTurnId === null) return 'The child is not stopped by a usage limit, so it stays on its account.'
-  if (m.limitedTurnId === m.movedAfterLimitTurnId)
+  if (m.limitedTurnId !== null && m.limitedTurnId === m.movedAfterLimitTurnId)
     return 'The child was already moved for this limit. It can move again only after a new limit.'
   if (!m.target || !m.target.enabled) return `No enabled account has the id ${m.targetId}.`
   if (m.target.agent !== m.agent)
@@ -255,6 +257,55 @@ export function moveChildProblem(m: {
     )
   if (m.targetId === m.currentInstanceId) return `The child already runs on ${m.target.name}.`
   return null
+}
+
+/**
+ * `hub.autoMoveAtPercent`: with a whole percent from 50 to 99 in the row, a
+ * child whose account passes it in its five-hour window moves to the account
+ * of its agent with the most room, at the end of its next turn. Off (null)
+ * unless the row says otherwise, so nothing moves accounts on its own.
+ */
+export const HUB_AUTO_MOVE_SETTING = 'hub.autoMoveAtPercent'
+export const HUB_AUTO_MOVE_MIN = 50
+export const HUB_AUTO_MOVE_MAX = 99
+
+export function readHubAutoMovePercent(getSetting: SettingReader): number | null {
+  const raw = getSetting(HUB_AUTO_MOVE_SETTING)
+  const n = raw === null || raw.trim() === '' ? NaN : Number(raw)
+  return Number.isInteger(n) && n >= HUB_AUTO_MOVE_MIN && n <= HUB_AUTO_MOVE_MAX ? n : null
+}
+
+/** How full one account's five-hour window is, 0-100; null when its usage could not be read. */
+export interface HubAccountRoom {
+  instanceId: string
+  usedPercent: number | null
+}
+
+/** A real improvement, so a move never swaps two accounts that are both nearly full. */
+export const HUB_AUTO_MOVE_MARGIN = 10
+
+/**
+ * Which account an auto-move picks for a child, or null for none: its own
+ * window must have passed `atPercent`, and the target must be read, under
+ * `atPercent` and at least `HUB_AUTO_MOVE_MARGIN` points emptier. The
+ * emptiest wins; equal readings keep the first, so the order of the list
+ * decides and the answer never flaps.
+ */
+export function autoMoveTarget(m: {
+  current: HubAccountRoom
+  others: readonly HubAccountRoom[]
+  atPercent: number
+}): string | null {
+  const used = m.current.usedPercent
+  if (used === null || used < m.atPercent) return null
+  let best: { instanceId: string; room: number } | null = null
+  for (const other of m.others) {
+    const room = other.usedPercent
+    if (room === null || other.instanceId === m.current.instanceId) continue
+    if (room >= m.atPercent || room > used - HUB_AUTO_MOVE_MARGIN) continue
+    if (!best || room < best.room) best = { instanceId: other.instanceId, room }
+  }
+  return best?.instanceId ?? null
 }
 
 // ─── Shown states ───────────────────────────────────────────────
@@ -841,9 +892,12 @@ export function childStateWord(c: Pick<HubChildView, 'state' | 'remote'>): strin
   return stateText(c.state)
 }
 
+// `working` and `limited` are the PARENT's own turn and limit, not its
+// children's: the plain words read as "the children are working" on a row
+// that says 0 running.
 const PARENT_STATE_LABELS: Record<ParentState, string | null> = {
-  working: 'Working',
-  limited: 'Limited',
+  working: 'This chat is working',
+  limited: 'This chat is limited',
   updates_ready: 'Updates ready',
   waiting: 'Waiting for children',
   done: 'Done',
@@ -878,6 +932,28 @@ export function canStopHubChild(c: Pick<HubChildView, 'state' | 'phase' | 'liveI
     ? !c.remote.stopping && (c.state === 'working' || (!c.remote.connected && isOpenChildPhase(c.phase)))
     : c.state === 'working' && c.liveId !== null
 }
+
+/**
+ * Whether a child row offers Resume: a child of this machine that stopped
+ * with work left (paused, failed, blocked, or limited and waiting). A child
+ * on another machine has none here: resume it where it runs.
+ */
+export function canResumeHubChild(c: Pick<HubChildView, 'state' | 'phase' | 'waitingForSlot' | 'remote'>): boolean {
+  if (c.remote || c.waitingForSlot || !isOpenChildPhase(c.phase)) return false
+  return c.state === 'paused' || c.state === 'failed' || c.state === 'blocked' || c.state === 'limited'
+}
+
+/** The turn Resume sends a stopped child. Wrapped as a hub block, so every surface drops it and shows no bubble. */
+export function hubResumeTurn(): string {
+  return `${HUB_UPDATE_OPEN}\nGo on with your task where you left off. ${HUB_REPORT_LINE}\n${HUB_UPDATE_CLOSE}`
+}
+
+/** "1 update waiting", "3 updates waiting": updates the parent has not been told yet. */
+export const hubHeldUpdatesText = (n: number): string => `${n} update${n === 1 ? '' : 's'} waiting`
+
+/** Why they wait, and what Show now does. The desktop shows it on the held-updates line. */
+export const HUB_HELD_UPDATES_HINT =
+  'These updates wait for you. Show now sends them to this chat as soon as it is idle.'
 
 /** Where a child's Stop goes (`provider:interrupt`): its live session, or a remote child's own id, which the desktop forwards. */
 export function hubChildStopTarget(c: Pick<HubChildView, 'chat' | 'liveId' | 'remote'>): string | null {

@@ -424,6 +424,25 @@ describe('auto-resume end to end', () => {
     expect(queued()).toEqual(['first queued', 'second queued'])
   })
 
+  it('an agent that exits on the limit stays armed, and resumes at the reset', async () => {
+    const resetAt = Date.UTC(2026, 9, 27, 12, 0)
+    vi.setSystemTime(resetAt - 10 * MIN)
+    boot()
+    await startChat()
+    await limitedTurnWithQueue(claudeLimitAt(resetAt))
+    expect(getLimitResume('c1')?.state).toBe('armed')
+
+    // The agent leaves on the limit: the registry ends the turn it left
+    // running and the session reports an error. Neither carries a limit, and
+    // no turn began after the arm, so neither is the chat running again.
+    adapter.onEvent({ type: 'turn.completed', threadId: 'c1', turnId: 'turn-exit' })
+    adapter.onEvent({ type: 'status', threadId: 'c1', status: 'error' })
+    expect(getLimitResume('c1')?.state).toBe('armed')
+
+    await vi.advanceTimersByTimeAsync(10 * MIN + LIMIT_RESUME_FIRE_DELAY_MS)
+    expect(resumeTurns()).toBe(1)
+  })
+
   it('a Stop between a Claude limit and its late empty result stays disarmed', async () => {
     const { events } = fixture('a limit followed by an empty success stays a limit')
     const limit = classify('claude', events)!

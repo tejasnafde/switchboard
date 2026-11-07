@@ -27,9 +27,20 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
 })
 
 const db = vi.hoisted(() => ({
-  children: [] as Array<{ childId: string; parentId: string; title: string; phase: string }>,
+  children: [] as Array<{
+    childId: string
+    parentId: string
+    title: string
+    phase: string
+    grantedMode?: string
+  }>,
   wakes: [] as Array<Record<string, unknown>>,
   held: new Map<string, string | null>(),
+  /** `conversations.session_id`, which a restart reads to resume a child. */
+  sessionIds: new Map<string, string>(),
+  /** `conversations.runtime_mode`, written even with no session. */
+  modes: new Map<string, string>(),
+  archived: new Set<string>(),
 }))
 
 vi.mock('../../src/main/db/database', () => ({
@@ -38,10 +49,15 @@ vi.mock('../../src/main/db/database', () => ({
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: () => true,
   rewriteSystemMarker: () => null,
-  getConversationById: (id: string) => ({ id, project_path: process.cwd() }),
+  getConversationById: (id: string) => ({
+    id,
+    project_path: process.cwd(),
+    agent_type: 'claude-code',
+    session_id: db.sessionIds.get(id) ?? null,
+  }),
   getConversationTitle: () => null,
   resolveRootThreadId: (id: string) => id,
-  getConversationRuntimeMode: () => null,
+  getConversationRuntimeMode: (id: string) => db.modes.get(id) ?? null,
   getConversationModel: () => null,
   getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
@@ -52,7 +68,7 @@ vi.mock('../../src/main/db/database', () => ({
   commitConversationProviderSwitch: () => {},
   getDb: () => ({}),
   deleteUserMessage: () => {},
-  isConversationArchived: () => false,
+  isConversationArchived: (id: string) => db.archived.has(id),
   openChildParentId: (id: string) => db.children.find((c) => c.childId === id)?.parentId ?? null,
   listHubChildrenInPhase: (phase: string) => db.children.filter((c) => c.phase === phase),
   listHubChildren: (parentId: string) => db.children.filter((c) => c.parentId === parentId),
@@ -153,6 +169,9 @@ async function setup(childCount = 2) {
   }))
   db.wakes.length = 0
   db.held.clear()
+  db.sessionIds.clear()
+  db.modes.clear()
+  db.archived.clear()
   const host = new FakeHost()
   const adapter = new Adapter()
   const mcp = fakeMcp()
@@ -172,37 +191,35 @@ async function setup(childCount = 2) {
 const settle = () => new Promise((r) => setTimeout(r, 0))
 
 describe('Stop on a parent', () => {
-  it('stops 6 running children in parallel, holds the parent and tells it each child stopped', async () => {
+  it('ends the parent turn only and leaves its children working', async () => {
+    const { host, adapter, busy, task } = await setup(6)
+    for (let i = 1; i <= 6; i++) {
+      task(`child${i}`)
+      busy(`child${i}`)
+    }
+    busy('parent1')
+    expect(await host.invoke(ProviderChannels.INTERRUPT, 'parent1')).toEqual({ live: true })
+    expect(adapter.interrupted).toEqual(['parent1'])
+    expect(db.held.size).toBe(0)
+    await settle()
+    expect(db.wakes).toEqual([])
+  })
+
+  it('stops all 6 children from the strip channel, in parallel, and tells the parent', async () => {
     const { host, adapter, busy } = await setup(6)
     adapter.interruptMs = 40
     for (let i = 1; i <= 6; i++) busy(`child${i}`)
     const started = Date.now()
-    await host.invoke(ProviderChannels.INTERRUPT, 'parent1')
+    await host.invoke(ProviderChannels.HUB_STOP_CHILDREN, 'parent1')
     // Serially this would take 240 ms.
     expect(Date.now() - started).toBeLessThan(200)
-    expect(adapter.interrupted.filter((id) => id !== 'parent1').sort()).toEqual([
-      'child1',
-      'child2',
-      'child3',
-      'child4',
-      'child5',
-      'child6',
-    ])
+    expect(adapter.interrupted.sort()).toEqual(['child1', 'child2', 'child3', 'child4', 'child5', 'child6'])
     expect(db.held.get('parent1')).toBe('stop')
     await vi.waitFor(() => expect(db.wakes).toHaveLength(6))
     expect(db.wakes.every((w) => w.kind === 'stopped' && w.summary === 'Stopped with this chat.')).toBe(true)
   })
 
-  it('holds the parent and stops nothing more when no child runs', async () => {
-    const { host, adapter } = await setup()
-    await host.invoke(ProviderChannels.INTERRUPT, 'parent1')
-    expect(adapter.interrupted).toEqual(['parent1'])
-    expect(db.held.get('parent1')).toBe('stop')
-    await settle()
-    expect(db.wakes).toEqual([])
-  })
-
-  it('stops all children from the strip channel, and refuses a child of another chat', async () => {
+  it('stops one child from the strip channel, and refuses a child of another chat', async () => {
     const { host, adapter, busy } = await setup()
     busy('child1')
     await host.invoke(ProviderChannels.HUB_STOP_CHILDREN, 'parent1')
@@ -358,5 +375,100 @@ describe('a reaped child', () => {
     })
     expect(adapter.starts.filter((s) => s.threadId === 'child1').at(-1)).toMatchObject({ resumeSessionId: 'sess-1' })
     expect(registry['sessionAdapters'].has('child1')).toBe(true)
+  })
+})
+
+describe('a child with no session', () => {
+  it('starts from its stored row for its parent message, after a restart lost the reaped options', async () => {
+    const { host, adapter, registry } = await setup()
+    db.sessionIds.set('child1', 'sess-restart')
+    // A restart: the session is gone and nothing of it is in memory.
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    expect(registry['sessionAdapters'].has('child1')).toBe(false)
+    expect(registry['reapedChildren'].has('child1')).toBe(false)
+    await registry.deliverPeerMessage({
+      fromThreadId: 'parent1',
+      targetThreadId: 'child1',
+      text: 'Go on with the migration.',
+      initiator: 'agent',
+    })
+    expect(adapter.starts.filter((s) => s.threadId === 'child1').at(-1)).toMatchObject({
+      resumeSessionId: 'sess-restart',
+      cwd: process.cwd(),
+    })
+    expect(registry['sessionAdapters'].has('child1')).toBe(true)
+  })
+
+  it('never starts it above the mode its parent granted', async () => {
+    const { host, adapter, registry } = await setup()
+    db.children[0]!.grantedMode = 'sandbox'
+    db.modes.set('child1', 'full-access')
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    await registry.deliverPeerMessage({
+      fromThreadId: 'parent1',
+      targetThreadId: 'child1',
+      text: 'Go on.',
+      initiator: 'agent',
+    })
+    expect(adapter.starts.filter((s) => s.threadId === 'child1').at(-1)).toMatchObject({ runtimeMode: 'sandbox' })
+  })
+
+  it('starts the same way for the row Resume, which had nothing to resume after a restart', async () => {
+    const { host, adapter, registry } = await setup()
+    db.sessionIds.set('child1', 'sess-restart')
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    const result = await registry.resumeHubChild('child1')
+    expect(result).toEqual({ ok: true })
+    expect(adapter.starts.filter((s) => s.threadId === 'child1').at(-1)).toMatchObject({
+      resumeSessionId: 'sess-restart',
+    })
+  })
+
+  it('leaves an archived chat and a child of another phase alone', async () => {
+    const { host, registry, adapter } = await setup()
+    db.archived.add('child1')
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    const before = adapter.starts.length
+    await expect(
+      registry.deliverPeerMessage({
+        fromThreadId: 'parent1',
+        targetThreadId: 'child1',
+        text: 'Go on.',
+        initiator: 'agent',
+      }),
+    ).rejects.toThrow(/is not running/)
+    expect(adapter.starts).toHaveLength(before)
+  })
+
+  it('leaves a child of another phase alone', async () => {
+    const { host, registry, adapter } = await setup()
+    db.children[0]!.phase = 'starting'
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    const before = adapter.starts.length
+    await expect(
+      registry.deliverPeerMessage({
+        fromThreadId: 'parent1',
+        targetThreadId: 'child1',
+        text: 'Go on.',
+        initiator: 'agent',
+      }),
+    ).rejects.toThrow(/is not running/)
+    expect(adapter.starts).toHaveLength(before)
+  })
+})
+
+describe('interrupt_child and the messages behind the turn', () => {
+  it('gives the parent back what the stop dropped, under the id the session runs under', async () => {
+    const { adapter, busy, event, tool } = await setup()
+    busy('child1')
+    event({ type: 'turn.queued', threadId: 'child1', messageId: 'q1', text: 'Also update the changelog.' })
+    event({ type: 'turn.queued', threadId: 'child1', messageId: 'q2', text: 'Then push the branch.' })
+    const text = (await tool('parent1', 'interrupt_child').call({ childId: 'child1' })).content[0]
+    expect(text).toMatchObject({
+      text:
+        'Stopped Child 1. 2 messages waited behind its turn and did not run. Send them again when it goes on:\n' +
+        '- Also update the changelog.\n- Then push the branch.',
+    })
+    expect(adapter.interrupted).toEqual(['child1'])
   })
 })

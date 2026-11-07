@@ -13,7 +13,7 @@
         "src/renderer/components/chat/UnifiedProviderPicker.tsx",
         "src/renderer/components/GoToChatDialog.tsx",
         "src/renderer/components/SearchModal.tsx",
-        "src/renderer/components/hub/ChildrenStrip.tsx",
+        "src/renderer/components/hub/HubChildrenList.tsx",
         "src/renderer/components/hub/HubBatchRows.tsx",
         "src/renderer/components/kanban/KanbanView.tsx",
         "src/renderer/components/reviews/PrLinkedChats.tsx",

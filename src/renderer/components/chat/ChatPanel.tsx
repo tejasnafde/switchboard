@@ -95,7 +95,6 @@ import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { fileDiffNoRevertMessage } from '@shared/file-diff-revert'
 import { useHubView } from '../../stores/hub-store'
 import { HubChip, hubOverflowEntry } from '../hub/HubChip'
-import { ChildrenStrip } from '../hub/ChildrenStrip'
 import { ChildBanner } from '../hub/ChildBanner'
 import { showArchiveRefusal } from '../hub/hub-actions'
 
@@ -1294,7 +1293,7 @@ export function ChatPanel({
 
   // A narrow header moves the Hub chip into its "..." menu (toolbar-steps.ts).
   const [headerRef, headerTier] = useContainerTier(toolbarTier)
-  const hubEntry = hasSession ? hubOverflowEntry(hub, () => panelRef.current) : null
+  const hubEntry = hasSession ? hubOverflowEntry(hub) : null
   const headerOverflow = overflowedItems(hubEntry ? [{ ...hubEntry, hideBelow: 480 as const }] : [], headerTier)
 
   const interruptTurn = async () => {
@@ -1687,14 +1686,6 @@ export function ChatPanel({
               sessionId={sessionId}
               title={activeSession?.title ?? 'Untitled chat'}
               machineId={activeSession?.machineId ?? 'local'}
-            />
-          )}
-          {hub.self && (
-            <ChildrenStrip
-              parent={hub.self}
-              items={hub.children}
-              state={hub.state}
-              heldUpdates={hub.heldUpdates ?? 0}
             />
           )}
           {composer}

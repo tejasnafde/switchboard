@@ -1611,7 +1611,7 @@ async function captureComposerChips(win, theme) {
 /**
  * The hub screens (flag hub_children), on a launch of their own so the other
  * screens never see the hub chats: the parent with four children (nested
- * sidebar, Hub chip, children strip at the default and the narrow width) and
+ * sidebar, Hub chip, the children list its popover holds) and
  * the working child's read-only view. That child runs the demo's "render
  * order" turn, whose tool call holds it Working for a minute.
  */
@@ -1652,11 +1652,10 @@ async function captureHubScreens(fixture, theme) {
   const turnTimes = win.locator('.turn-timestamp')
 
   await openConversation(win, HUB_PARENT.title)
-  const strip = win.getByTestId('hub-children-strip')
-  await strip.locator('[data-hub-child]').nth(3).waitFor({ state: 'visible', timeout: 20_000 })
-  const working = strip.locator('[data-hub-child="working"]')
-  await working.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
-  await win.getByTestId('hub-chip').waitFor({ state: 'visible' })
+  const chip = win.getByTestId('hub-chip')
+  await chip.waitFor({ state: 'visible' })
+  // The sidebar first: a click outside the popover closes it, so everything
+  // that clicks elsewhere happens before the list is open.
   // The three open children nest under the parent in its project; the failed one is not open.
   const projectToggle = win
     .locator('.sidebar-project-header')
@@ -1666,17 +1665,17 @@ async function captureHubScreens(fixture, theme) {
   if ((await projectToggle.getAttribute('aria-expanded')) !== 'true') await projectToggle.click()
   await win.locator('.sidebar-thread-child').nth(2).waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'hub-parent', theme, win, [turnTimes])
-  await snapScreen(win, 'hub-strip', theme, strip)
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
+
+  await chip.click()
+  const children = win.getByTestId('hub-children-list')
+  await children.locator('[data-hub-child]').nth(3).waitFor({ state: 'visible', timeout: 20_000 })
+  const working = children.locator('[data-hub-child="working"]')
+  await working.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
   await settle(win)
-  const stripOverflow = await strip.evaluate((el) => el.scrollWidth - el.clientWidth)
-  if (stripOverflow > 0)
-    screenFailures.push(`hub-strip-narrow-${theme.toLowerCase()}: the strip scrolls ${stripOverflow}px sideways`)
-  await snapScreen(win, 'hub-strip-narrow', theme, strip)
-  await app.evaluate(
-    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }),
-    SCREEN_SIZE,
-  )
+  await snapScreen(win, 'hub-children', theme, children)
+  const listOverflow = await children.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (listOverflow > 0)
+    screenFailures.push(`hub-children-${theme.toLowerCase()}: the list scrolls ${listOverflow}px sideways`)
 
   await working.getByRole('button', { name: 'Open', exact: true }).click()
   await win.locator('.chat-identity-title').filter({ hasText: HUB_WORKING_CHILD.title }).waitFor({ state: 'visible' })
@@ -1711,15 +1710,18 @@ async function captureRemoteHubScreens(fixture, theme) {
   const turnTimes = win.locator('.turn-timestamp')
 
   await openConversation(win, HUB_REMOTE_PARENT.title)
-  const strip = win.getByTestId('hub-children-strip')
-  const remoteRow = strip.locator('li').filter({ has: win.getByTestId('hub-machine-badge') })
-  await remoteRow.getByText(`${HUB_REMOTE_MACHINE.name} offline, last seen 3 h ago`).waitFor({ timeout: 20_000 })
-  await strip.locator('[data-hub-child="result_ready"]').waitFor({ state: 'visible' })
   const chip = win.getByTestId('hub-chip')
   await chip.getByText('2 children on 2 machines').waitFor({ state: 'visible' })
-  await snapScreen(win, 'hub-remote-strip', theme, strip)
-  await snapScreen(win, 'hub-remote-offline', theme, remoteRow)
   await snapScreen(win, 'hub-remote-chip', theme, chip)
+  await chip.click()
+  const children = win.getByTestId('hub-children-list')
+  const remoteRow = children.locator('li').filter({ has: win.getByTestId('hub-machine-badge') })
+  await remoteRow.getByText(`${HUB_REMOTE_MACHINE.name} offline, last seen 3 h ago`).waitFor({ timeout: 20_000 })
+  await children.locator('[data-hub-child="result_ready"]').waitFor({ state: 'visible' })
+  await settle(win)
+  await snapScreen(win, 'hub-remote-children', theme, children)
+  await snapScreen(win, 'hub-remote-offline', theme, remoteRow)
+  await win.keyboard.press('Escape')
 
   const editor = win.locator('.chat-composer [aria-label="Chat message"]').first()
   await editor.click()
