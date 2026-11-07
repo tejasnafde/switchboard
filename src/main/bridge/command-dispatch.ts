@@ -206,7 +206,9 @@ export class BridgeCommandDispatcher {
       }
       case 'read_chat': {
         if (args.chat === undefined) return this.deny(bridgeError('invalid_request', 'chat is required.'))
-        return this.answer(await this.deps.reads.readChat({ chat: args.chat, since: args.since }))
+        return this.answer(
+          await this.deps.reads.readChat({ chat: args.chat, since: args.since, reply_offset: args.reply_offset }),
+        )
       }
       case 'start_chat': {
         const shape =

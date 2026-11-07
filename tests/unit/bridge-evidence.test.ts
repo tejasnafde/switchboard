@@ -142,7 +142,29 @@ describe('code evidence', () => {
 describe('pull request evidence', () => {
   it('is not measured when the chat links none', async () => {
     const evidence = await buildBridgeEvidence('chat-1', deps())
-    expect(evidence.pull_requests).toEqual({ status: 'not_measured', items: [] })
+    expect(evidence.pull_requests).toEqual({ status: 'not_measured', items: [], omitted: 0 })
+  })
+
+  it('reads only the newest links, so a chat with hundreds costs one read each and counts the rest', async () => {
+    const links = Array.from({ length: 206 }, (_, i) => ({ ...REF, number: i + 1 }))
+    const read: number[] = []
+    const evidence = await buildBridgeEvidence(
+      'chat-1',
+      deps({
+        prLinks: () => links,
+        readPr: async (ref) => {
+          read.push(ref.number)
+          return { ...READING, headSha: FACTS.head }
+        },
+      }),
+    )
+    expect(evidence.pull_requests.items).toHaveLength(10)
+    expect(evidence.pull_requests.omitted).toBe(196)
+    // Newest first, and nothing older was read at all.
+    expect(evidence.pull_requests.items.map((pr) => pr.number)).toEqual([
+      206, 205, 204, 203, 202, 201, 200, 199, 198, 197,
+    ])
+    expect(read.sort((a, b) => a - b)).toEqual([197, 198, 199, 200, 201, 202, 203, 204, 205, 206])
   })
 
   it('is measured when the head is the commit this checkout is on', async () => {
@@ -196,7 +218,7 @@ describe('pull request evidence', () => {
 describe('measured check evidence', () => {
   it('stays not measured while nothing ran, whatever the agent wrote', async () => {
     const evidence = await buildBridgeEvidence('chat-1', deps())
-    expect(evidence.checks).toEqual({ status: 'not_measured', items: [] })
+    expect(evidence.checks).toEqual({ status: 'not_measured', items: [], omitted: 0 })
   })
 
   it('reports a pass on the exact source it ran on', async () => {
@@ -294,6 +316,13 @@ describe('measured check evidence', () => {
       deps({ checkRuns: () => [run(), run({ runId: 'bchk_2', name: 'lint', state: 'cancelled', exitCode: null })] }),
     )
     expect(evidence.checks.status).toBe('not_measured')
+  })
+
+  it('keeps the newest runs and counts the rest', async () => {
+    const runs = Array.from({ length: 24 }, (_, i) => run({ runId: `bchk_${i}`, name: `check-${i}` }))
+    const evidence = await buildBridgeEvidence('chat-1', deps({ checkRuns: () => runs }))
+    expect(evidence.checks.items.map((c) => c.name)).toEqual(runs.slice(0, 20).map((r) => r.name))
+    expect(evidence.checks.omitted).toBe(4)
   })
 })
 

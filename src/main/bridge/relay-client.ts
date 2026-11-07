@@ -52,6 +52,7 @@ const REJECTION_CODES = new Set([
   'wrong_origin',
   'replaced',
   'invalid_frame',
+  'frame_too_large',
   'relay_misconfigured',
 ])
 
@@ -384,8 +385,9 @@ export class BridgeRelayClient {
       ...(answer.ok ? { result: answer.result } : { error: answer.error }),
     }
     let text = JSON.stringify(frame)
-    if (Buffer.byteLength(text) > MAX_RELAY_FRAME_BYTES) {
-      log.warn('a relay result was too large to send', { callId: answer.callId })
+    const bytes = Buffer.byteLength(text)
+    if (bytes > MAX_RELAY_FRAME_BYTES) {
+      log.warn('a relay result was too large to send', { callId: answer.callId, bytes, limit: MAX_RELAY_FRAME_BYTES })
       text = JSON.stringify({
         ...frame,
         ok: false,
@@ -393,8 +395,9 @@ export class BridgeRelayClient {
         error: {
           ...bridgeError(
             'internal_error',
-            'The answer was too large for one relay frame. Read the chat on this machine.',
-            { call_id: answer.callId },
+            `The answer was ${bytes} bytes, over the ${MAX_RELAY_FRAME_BYTES} byte limit of one relay frame. ` +
+              'Ask for less of it, or read the chat on this machine.',
+            { call_id: answer.callId, bytes, limit: MAX_RELAY_FRAME_BYTES },
           ),
           delivered: false,
           non_delivery_confirmed: false,
@@ -492,7 +495,10 @@ export class BridgeRelayClient {
     this.phase = 'await_challenge'
     this.generation = null
     if (!this.running) return
-    const refusal = REJECTION_CODES.has(reason) ? reason : null
+    // A close reason can name numbers after its code, for example
+    // "frame_too_large: 70135 bytes, limit 65536".
+    const closeCode = reason.split(':')[0]
+    const refusal = REJECTION_CODES.has(closeCode) ? closeCode : null
     if (reason === 'revoked') this.deps.onRevoked?.()
     const why = refusal ?? this.lastError ?? `closed_${code}`
     const rejected = refusal !== null || (this.lastError !== null && REJECTION_CODES.has(this.lastError))

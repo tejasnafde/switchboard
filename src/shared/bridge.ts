@@ -582,10 +582,21 @@ export interface BridgeCheckEvidence extends BridgeEvidenceFact {
   note: string
 }
 
+/**
+ * A group of measured facts. `items` holds the newest ones only, so one read
+ * always fits a relay frame; `omitted` counts the older ones left out, which
+ * were never read, so the status speaks for `items` alone.
+ */
+export interface BridgeEvidenceGroup<T> {
+  status: BridgeEvidenceStatus
+  items: T[]
+  omitted: number
+}
+
 export interface BridgeEvidence {
   code: BridgeCodeEvidence
-  pull_requests: { status: BridgeEvidenceStatus; items: BridgePrEvidence[] }
-  checks: { status: BridgeEvidenceStatus; items: BridgeCheckEvidence[] }
+  pull_requests: BridgeEvidenceGroup<BridgePrEvidence>
+  checks: BridgeEvidenceGroup<BridgeCheckEvidence>
 }
 
 /** Nothing was read: every fact is `not_measured`, never a claim of success. */
@@ -605,10 +616,18 @@ export function emptyBridgeEvidence(observedAt: string): BridgeEvidence {
       attribution: 'unknown',
       note: 'The checkout was not read.',
     },
-    pull_requests: { status: 'not_measured', items: [] },
-    checks: { status: 'not_measured', items: [] },
+    pull_requests: { status: 'not_measured', items: [], omitted: 0 },
+    checks: { status: 'not_measured', items: [], omitted: 0 },
   }
 }
+
+/**
+ * How many pull requests and checks one read measures. A chat can link
+ * hundreds of pull requests; reading them all costs one host call each and
+ * makes an answer the relay cannot carry, so a read takes the newest ones.
+ */
+export const BRIDGE_EVIDENCE_PR_MAX = 10
+export const BRIDGE_EVIDENCE_CHECK_MAX = 20
 
 /**
  * The worst status wins, so one unread fact never reads as a measured whole.
@@ -818,6 +837,9 @@ export interface BridgeError {
   account_choices?: Array<{ account_id: string; name: string }>
   /** Set on a rejected call: true when the action never reached the machine. */
   non_delivery_confirmed?: boolean
+  /** Set when an answer was too large to send: its size and the limit, in bytes. */
+  bytes?: number
+  limit?: number
 }
 
 export function bridgeError(
