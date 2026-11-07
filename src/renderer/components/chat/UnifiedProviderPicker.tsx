@@ -174,12 +174,10 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             </>
           ) : (
             <>
-              {/* The agent's own mark. A dot in the account's accent colour
-                  rides its corner only when this agent has more than one
-                  account AND the account name is not beside it: below the
-                  680 px step that name is sr-only, so the dot is the only
-                  sign of which account the chat runs on. The name itself
-                  stays in the button title at every width. */}
+              {/* The agent's own mark. With more than one account the chip
+                  names it in the label; below the 680 px step that label is
+                  sr-only, so a dot in the account colour takes its place on
+                  the corner. The button title names it at every width. */}
               <span aria-hidden className="relative inline-flex size-[18px] shrink-0 items-center justify-center">
                 <AgentMark agent={agentType} size={14} className="text-[var(--text-primary)]" />
                 {showAccount && (
