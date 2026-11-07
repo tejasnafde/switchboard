@@ -7,7 +7,6 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/shared/hub.ts",
         "src/renderer/services/chat-landing.ts",
         "src/renderer/components/sidebar/recent-sessions.ts",
         "tests/unit/chat-landing.test.ts"
@@ -26,7 +25,7 @@
     },
     "sharedBackendApi": {
       "status": "not_applicable",
-      "reason": "No contract change. The backend keeps sending every chat with its `hub` field, as it already did for the sidebar; which rows a flat list draws is the client's choice. No channel, wire field or capability is added."
+      "reason": "No contract change. The rule itself lives in src/shared/hub.ts, which both lists read, but the backend keeps sending every chat with its `hub` field, as it already did for the sidebar; which rows a flat list draws is the client's choice. No channel, wire field or capability is added."
     },
     "storageDataMigration": {
       "status": "not_applicable",
