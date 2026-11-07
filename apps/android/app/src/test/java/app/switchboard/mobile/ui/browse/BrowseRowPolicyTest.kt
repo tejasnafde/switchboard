@@ -4,6 +4,7 @@ import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.protocol.JsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class BrowseRowPolicyTest {
@@ -34,31 +35,53 @@ class BrowseRowPolicyTest {
     }
 
     @Test
-    fun conversationSupportingLabelUsesReadableAgentAndOnlyOneActivityCue() {
+    fun conversationSupportingLabelLeavesTheAgentToItsMarkAndShowsOneActivityCue() {
+        assertEquals("failed", BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2, status = "failed")))
+        assertEquals("2 unread", BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2)))
         assertEquals(
-            "Claude · failed",
-            BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2, status = "failed")),
-        )
-        assertEquals("Claude · 2 unread", BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2)))
-        assertEquals(
-            "OpenCode · running",
+            "running",
             BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "opencode", status = "running")),
         )
-        assertEquals("Codex · saved", BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "codex")))
+        assertEquals("saved", BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "codex")))
+    }
+
+    @Test
+    fun conversationSupportingLabelNamesAnAgentThatHasNoMark() {
         assertEquals(
             "Cursor · saved",
             BrowseRowPolicy.conversationSupportingLabel(conversation(originSource = "cursor")),
         )
+        assertEquals(
+            "Local · saved",
+            BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "acp-command")),
+        )
+        assertEquals(
+            "some-future-agent · saved",
+            BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "some-future-agent")),
+        )
+    }
+
+    @Test
+    fun aCursorImportKeepsItsNameAndDrawsNoMark() {
+        // A Cursor import is stored as claude-code: its mark would name the wrong product.
+        val cursor = conversation(originSource = "cursor")
+        assertNull(BrowseRowPolicy.conversationMarkAgent(cursor))
+        assertEquals("claude", BrowseRowPolicy.conversationMarkAgent(conversation()))
+    }
+
+    @Test
+    fun conversationSupportingLabelIsEmptyWhenTheMarkSaysItAll() {
+        assertEquals("", BrowseRowPolicy.conversationSupportingLabel(conversation(availableOffline = false)))
     }
 
     @Test
     fun conversationSupportingLabelShowsTheTurnPreviewAfterAFailure() {
         assertEquals(
-            "Claude · Reading files",
+            "Reading files",
             BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2, status = "running", preview = "Reading files")),
         )
         assertEquals(
-            "Claude · failed",
+            "failed",
             BrowseRowPolicy.conversationSupportingLabel(conversation(status = "failed", preview = "Reading files")),
         )
     }
@@ -88,6 +111,7 @@ class BrowseRowPolicyTest {
         unread: Int = 0,
         status: String? = null,
         preview: String? = null,
+        availableOffline: Boolean = true,
     ) = BrowseConversationRow(
         conversation = Conversation(
             id = "thread-1",
@@ -107,7 +131,7 @@ class BrowseRowPolicyTest {
         agentType = agentType,
         originSource = originSource,
         updatedAt = 0,
-        availableOffline = true,
+        availableOffline = availableOffline,
         unread = unread,
         status = status,
         preview = preview,

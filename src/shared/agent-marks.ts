@@ -29,9 +29,10 @@ export const AGENT_MARKS: Partial<Record<AgentProvider, AgentMarkData>> = {
     ],
   },
   opencode: {
-    // The artwork sits in the middle of the vendor's 512 box; this is its own extent,
-    // so the mark draws the same height as every other one.
-    viewBox: '128 96 256 320',
+    // The artwork sits in the middle of the vendor's 512 box. This is the
+    // square around it, so the mark draws the same height as every other one
+    // and Android can scale it into a square icon without stretching it.
+    viewBox: '96 96 320 320',
     fillRule: 'evenodd',
     paths: ['M384 416H128V96H384V416ZM320 160H192V352H320V160Z'],
   },
