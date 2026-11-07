@@ -2,6 +2,7 @@ package app.switchboard.mobile.ui.thread
 
 import app.switchboard.mobile.data.remote.GitContextState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -66,5 +67,26 @@ class GitContextPresentationTest {
 
         assertEquals("Branch unavailable", failed.branchLabel)
         assertEquals("unknown · project", failed.compactLabel)
+    }
+
+    @Test
+    fun `the worktree fork is left out only where the folder has no HEAD`() {
+        assertTrue(GitContextPresenter.offersWorktreeFork(GitContextState(branch = "main", loaded = true)))
+        // Detached HEAD is still a work tree: a fork branches off that commit.
+        assertTrue(GitContextPresenter.offersWorktreeFork(GitContextState(loaded = true)))
+        assertFalse(
+            GitContextPresenter.offersWorktreeFork(
+                GitContextState(loaded = true, error = "fatal: not a git repository (or any of the parent directories)"),
+            ),
+        )
+        assertFalse(GitContextPresenter.offersWorktreeFork(GitContextState(loaded = true, missing = true)))
+        // A read that failed for another reason, or that has not answered,
+        // keeps the choice: the backend refuses what it cannot serve.
+        assertTrue(
+            GitContextPresenter.offersWorktreeFork(
+                GitContextState(loaded = true, error = "Machine connection was lost. Retry branch lookup."),
+            ),
+        )
+        assertTrue(GitContextPresenter.offersWorktreeFork(GitContextState(loading = true)))
     }
 }

@@ -160,6 +160,7 @@ async function spawnTerminalsForSession(
   requestedLaunchConfig: string | null = null,
 ) {
   const store = useTerminalStore.getState()
+  let wantedLaunchConfig = requestedLaunchConfig
 
   // 1. Try SQLite - restore the prior live layout exactly. Picker
   //    badge gets the saved launch_config_name back so the user sees the
@@ -176,6 +177,9 @@ async function spawnTerminalsForSession(
           return
         }
       }
+      // A name with no panes is what a fork inherits from its source: hydrate
+      // that launch config below, against this session's own execution root.
+      if (!wantedLaunchConfig && saved?.launchConfigName) wantedLaunchConfig = saved.launchConfigName
     } catch (err) {
       log.debug(`getSessionLayout failed for ${sessionId} - falling through to launch-config.yaml`, err)
     }
@@ -187,7 +191,7 @@ async function spawnTerminalsForSession(
       const yamlContent = await window.api.app.getLaunchConfig(projectPath)
       if (yamlContent) {
         const config = parseLaunchConfigFile(yamlContent)
-        const resolved = resolveLaunchConfigFallback(config, requestedLaunchConfig)
+        const resolved = resolveLaunchConfigFallback(config, wantedLaunchConfig)
         if (resolved) {
           if (resolved.fellBack && resolved.removedName) {
             window.dispatchEvent(

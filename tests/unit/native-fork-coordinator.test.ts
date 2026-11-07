@@ -28,7 +28,7 @@ function database(agentType: AgentProvider): Database.Database {
       updated_at INTEGER NOT NULL, parent_conversation_id TEXT,
       forked_at_message_id TEXT, worktree_path TEXT, worktree_branch TEXT,
       worktree_id TEXT, runtime_mode TEXT, model TEXT, provider_instance_id TEXT,
-      pending_handoff_from TEXT, launch_config_name TEXT, sidebar_role TEXT
+      pending_handoff_from TEXT, sidebar_role TEXT
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
