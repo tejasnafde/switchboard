@@ -86,14 +86,31 @@ export function BridgeChecksPanel() {
     <section className="mb-[18px]" data-testid="bridge-checks">
       <h3 className="mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">Instinct bridge checks</h3>
       <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
-        <p className="m-0 px-[14px] pb-1 pt-3 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
-          A check runs once after a bridge turn ends, when the folder has stopped changing. Its exit code is the only
-          thing Switchboard reports as measured. What the agent writes about tests is never a result. Each check is a
-          program and its arguments, so nothing is run through a shell. At most {BRIDGE_CHECKS_MAX} per project. A
-          result is flagged when the chat wrote a file that decides what a check runs (package.json, a lock file, a
-          Makefile, anything under scripts/). No flag is not proof the check itself is unchanged. This panel reads no
-          checkout, so a result here is never reported as being about the code as it is now.
+        <p className="m-0 px-[14px] pb-2 pt-3 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
+          A check runs after a bridge turn ends. Its exit code is the only result Switchboard reports as measured, and
+          what an agent says about tests never counts.
         </p>
+        <details className="group px-[14px] pb-2.5 text-[11.5px] leading-[1.45] text-[var(--text-secondary)]">
+          <summary className="-ml-1 inline-flex h-5 cursor-pointer select-none list-none items-center gap-1 rounded-[4px] pl-1 pr-1.5 text-[11px] text-[var(--text-muted)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--switch-focus)] [&::-webkit-details-marker]:hidden">
+            <span
+              aria-hidden="true"
+              className="mb-px ml-px mr-0.5 size-[5px] -rotate-45 border-b-[1.5px] border-r-[1.5px] border-current transition-transform duration-100 group-open:mb-[3px] group-open:rotate-45"
+            />
+            <span className="group-open:hidden">How a check is measured</span>
+            <span className="hidden group-open:inline">Less</span>
+          </summary>
+          <ul className="m-0 mt-0.5 list-disc pl-[15px]">
+            <li>
+              A check is a program and its arguments, never a shell line. At most {BRIDGE_CHECKS_MAX} per project.
+            </li>
+            <li>It runs once the folder has stopped changing, so a result belongs to one state of the code.</li>
+            <li>
+              A result is flagged when the chat wrote a file that decides what a check runs (package.json, a lock file,
+              a Makefile, anything under scripts/). No flag is not proof the check itself is unchanged.
+            </li>
+            <li>This panel reads no checkout, so a result here is never a claim about the code as it is now.</li>
+          </ul>
+        </details>
         {projects.length === 0 && (
           <p className="m-0 px-[14px] py-3 text-[12px] text-[var(--text-muted)]">No allowed projects yet.</p>
         )}

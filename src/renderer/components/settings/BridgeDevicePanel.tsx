@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { BridgeDeviceStatus } from '@shared/bridge'
+import { BRIDGE_DEVICE_STATUS } from './bridge-setup-model'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { confirm } from '../ui/confirm'
@@ -48,6 +49,7 @@ export function BridgeDevicePanel() {
 
   const show = (next: BridgeDeviceStatus) => {
     setStatus(next)
+    window.dispatchEvent(new CustomEvent(BRIDGE_DEVICE_STATUS, { detail: next }))
     if (shownLabel.current !== next.label) {
       shownLabel.current = next.label
       setLabel(next.label ?? '')
@@ -69,7 +71,9 @@ export function BridgeDevicePanel() {
         .catch((err: unknown) => {
           if (!failed) log.warn('reading the bridge device status failed', err)
           failed = true
-          if (live) setReadError('Could not read the enrollment.')
+          if (!live) return
+          window.dispatchEvent(new CustomEvent(BRIDGE_DEVICE_STATUS, { detail: null }))
+          setReadError('Could not read the enrollment.')
         })
     void read()
     const timer = setInterval(read, POLL_MS)
@@ -122,8 +126,8 @@ export function BridgeDevicePanel() {
       <h3 className="mb-2 text-[11px] font-[500] leading-4 text-[var(--text-muted)]">Instinct bridge device</h3>
       <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
         <p className="m-0 px-[14px] pb-1 pt-3 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
-          Enroll this Mac so that Instinct can reach it through the bridge relay. Enroll makes a device key that stays
-          on this Mac, encrypted by the keychain. Then run the operator command to register its public key at the relay.
+          Enroll this Mac so the bridge relay can reach it. The device key stays here, encrypted by the keychain; only
+          its public half goes to the relay.
         </p>
         <Row name="Status">
           <span data-testid="bridge-device-status">{status ? bridgeStatusText(status) : 'Reading'}</span>
@@ -164,9 +168,7 @@ export function BridgeDevicePanel() {
         {enrolled && status?.operator_command && (
           <div className="border-t border-[var(--border)] px-[14px] py-2.5">
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[12px] text-[var(--text-secondary)]">
-                Operator command (run it in a Switchboard checkout)
-              </span>
+              <span className="text-[12px] text-[var(--text-secondary)]">Register this Mac at the relay</span>
               <Button size="sm" variant="ghost" onClick={() => void copy(status.operator_command!)}>
                 {copied ? 'Copied' : 'Copy'}
               </Button>
@@ -177,6 +179,9 @@ export function BridgeDevicePanel() {
             >
               {status.operator_command}
             </pre>
+            <p className="m-0 mt-1 text-[11px] leading-[1.45] text-[var(--text-muted)]">
+              Paste it in any folder. It needs the operator key from Secret Manager, which is not your login.
+            </p>
           </div>
         )}
         <div className="flex justify-end gap-2 border-t border-[var(--border)] px-[14px] py-2.5">

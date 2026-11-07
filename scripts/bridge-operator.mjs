@@ -17,12 +17,14 @@
 // localhost and [::1].
 //
 // The public key file holds what Settings > Labs shows: SPKI base64, a PEM
-// public key, or a public JWK. `-` reads it from stdin.
+// public key, or a public JWK. `-` reads it from stdin. Nothing here reads the
+// working folder, so an absolute path to this script runs from anywhere; that
+// is the command Settings > Labs copies.
 
 import { execFileSync } from 'node:child_process'
 import { createPublicKey } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
+import { readFileSync, realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const USER_AGENT = 'Switchboard-operator/1'
 const DEFAULT_ORIGIN = 'https://bridge.tn07.dev'
@@ -155,4 +157,19 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main()
+/**
+ * True when node was given THIS file to run. Both sides are resolved through
+ * realpath: a run from a symlinked path (anything under /var/folders, which is
+ * /private/var) otherwise compares unequal, and the script exits 0 doing
+ * nothing.
+ */
+export function isDirectRun(moduleUrl, entry) {
+  if (!entry) return false
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(entry)
+  } catch {
+    return false
+  }
+}
+
+if (isDirectRun(import.meta.url, process.argv[1])) await main()

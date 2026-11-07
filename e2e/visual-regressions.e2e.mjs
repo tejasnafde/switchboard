@@ -907,6 +907,37 @@ async function captureThemeScreens(win, theme) {
   await snapScreen(win, 'settings-labs-children', theme, childSection)
   await childSwitch.click()
   await settings.getByRole('switch', { name: 'Children on other machines' }).and(win.locator(':disabled')).waitFor()
+
+  // The Instinct bridge panels, which show only with the flag on: the numbered
+  // setup checklist and the searchable project list. Each is captured on its
+  // own, because a region taller than the window does not paint in full. The
+  // project folders are this computer's, so they are masked.
+  const bridgeSwitch = settings.getByRole('switch', { name: 'Instinct bridge' })
+  await bridgeSwitch.click()
+  const bridgeSetup = settings.getByTestId('bridge-setup')
+  const bridgeProjects = settings.getByTestId('bridge-projects')
+  await bridgeSetup.waitFor({ state: 'visible' })
+  await bridgeProjects.getByTestId('bridge-projects-count').waitFor({ state: 'visible' })
+  const projectPaths = [bridgeProjects.locator('[data-project-path]')]
+  await bridgeSetup.scrollIntoViewIfNeeded()
+  await snapScreen(win, 'settings-labs-bridge-setup', theme, bridgeSetup)
+  await bridgeProjects.scrollIntoViewIfNeeded()
+  await snapScreen(win, 'settings-labs-bridge-projects', theme, bridgeProjects, projectPaths)
+  if (theme === 'Dark') {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
+    await settle(win)
+    await bridgeProjects.scrollIntoViewIfNeeded()
+    await snapScreen(win, 'settings-labs-bridge-narrow', theme, bridgeProjects, projectPaths)
+    await app.evaluate(
+      ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }),
+      SCREEN_SIZE,
+    )
+    await settle(win)
+  }
+  // Off again, so no later screen runs with the flag on.
+  await bridgeSwitch.click()
+  await bridgeSetup.waitFor({ state: 'detached' })
+
   // Light and dark only: the list is plain surfaces, nothing translucent-specific.
   if (theme !== 'Translucent') await captureDevicesScreens(win, theme, settings)
   await win.keyboard.press('Escape')
