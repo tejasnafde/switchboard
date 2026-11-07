@@ -1,7 +1,7 @@
 /**
  * The git facts the bridge's evidence is built from: the checkout's HEAD,
- * branch, working-tree snapshot, dirty state and the number of files that
- * differ from a recorded baseline tree.
+ * branch, working-tree snapshot, dirty state and the files that differ from
+ * a recorded baseline tree.
  *
  * Snapshots reuse `git/checkpoint.ts` (`createCheckpoint`), the same
  * throwaway-index path the diff cards use, so nothing here touches the
@@ -69,15 +69,15 @@ export async function readBridgeGitFacts(
   }
 }
 
-/** Files that differ between two trees, or null when the diff cannot be read. */
-export async function countChangedFiles(
+/** The paths that differ between two trees, relative to the repository root, or null when the diff cannot be read. */
+export async function listChangedFiles(
   cwd: string,
   fromTree: string,
   toTree: string,
   runner: CheckpointGitRunner = bridgeGitRunner,
-): Promise<number | null> {
-  if (fromTree === toTree) return 0
+): Promise<string[] | null> {
+  if (fromTree === toTree) return []
   const out = await text(['diff', '-z', '--name-only', '--no-renames', fromTree, toTree], cwd, runner)
   if (out === null) return null
-  return out.split('\0').filter((p) => p.length > 0).length
+  return out.split('\0').filter((p) => p.length > 0)
 }

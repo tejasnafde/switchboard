@@ -6,8 +6,18 @@
  * stale, a host that cannot be read is unavailable, and a check whose source
  * moved or whose definition the chat changed is never measured.
  */
-import { describe, expect, it } from 'vitest'
-import { buildBridgeEvidence, type BridgeEvidenceDeps, type BridgePrReading } from '../../src/main/bridge/evidence'
+import { describe, expect, it, vi } from 'vitest'
+import { createMigratedDb } from './helpers/test-db'
+
+vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/switchboard-vitest') } }))
+
+import {
+  buildBridgeEvidence,
+  bridgeEvidenceReader,
+  type BridgeEvidenceDeps,
+  type BridgePrReading,
+} from '../../src/main/bridge/evidence'
+import { addProject, createConversation, linkConversationPullRequest } from '../../src/main/db/database'
 import type { BridgeCheckRun } from '../../src/main/db/bridge'
 import type { BridgeGitFacts } from '../../src/main/bridge/git-facts'
 import type { PrRef } from '../../src/shared/pull-requests'
@@ -54,9 +64,10 @@ function deps(over: Partial<BridgeEvidenceDeps> = {}): BridgeEvidenceDeps {
     now: () => 10_000,
     executionRoot: () => ({ cwd: CWD, revision: 3 }),
     facts: async () => FACTS,
-    changedFiles: async () => 2,
+    changedFiles: async () => ['src/a.ts', 'src/b.ts'],
     shared: () => false,
     baselineTree: () => 'tree-baseline',
+    writtenSinceBaseline: () => ['src/a.ts', 'src/b.ts'],
     prLinks: () => [],
     readPr: async () => READING,
     checkRuns: () => [],
@@ -92,6 +103,26 @@ describe('code evidence', () => {
     const evidence = await buildBridgeEvidence('chat-1', deps({ shared: () => true }))
     expect(evidence.code.attribution).toBe('unknown')
     expect(evidence.code.note).toContain('shares this checkout')
+  })
+
+  it('attributes nothing when a changed file is not one this chat wrote', async () => {
+    const evidence = await buildBridgeEvidence('chat-1', deps({ writtenSinceBaseline: () => ['src/a.ts'] }))
+    expect(evidence.code.attribution).toBe('unknown')
+    expect(evidence.code.note).toContain('not in what this chat wrote')
+  })
+
+  it('attributes nothing when no written set was recorded, even alone in the checkout', async () => {
+    const evidence = await buildBridgeEvidence('chat-1', deps({ writtenSinceBaseline: () => null }))
+    expect(evidence.code).toMatchObject({ attribution: 'unknown', changed_files: 2 })
+  })
+
+  it('attributes nothing when nothing changed', async () => {
+    const evidence = await buildBridgeEvidence(
+      'chat-1',
+      deps({ changedFiles: async () => [], writtenSinceBaseline: () => [] }),
+    )
+    expect(evidence.code).toMatchObject({ attribution: 'unknown', changed_files: 0 })
+    expect(evidence.code.note).toContain('Nothing differs from the baseline')
   })
 
   it('is unavailable, not clean, when the folder cannot be read as a checkout', async () => {
@@ -141,6 +172,12 @@ describe('pull request evidence', () => {
     const evidence = await buildBridgeEvidence('chat-1', deps({ prLinks: () => [REF], readPr: async () => null }))
     expect(evidence.pull_requests.status).toBe('unavailable')
     expect(evidence.pull_requests.items[0]).toMatchObject({ status: 'unavailable', url: null, state: null })
+  })
+
+  it('is unavailable, not stale, when the checkout could not be read', async () => {
+    const evidence = await buildBridgeEvidence('chat-1', deps({ prLinks: () => [REF], facts: async () => null }))
+    expect(evidence.pull_requests.items[0]).toMatchObject({ status: 'unavailable', url: READING.url })
+    expect(evidence.pull_requests.items[0].note).toContain('not compared')
   })
 
   it('is unavailable when the read throws', async () => {
@@ -231,11 +268,36 @@ describe('measured check evidence', () => {
     expect(broken.checks.items[0]).toMatchObject({ status: 'unavailable', outcome: 'unavailable' })
   })
 
+  it('says the definition flag is one way only on every finished run', async () => {
+    const evidence = await buildBridgeEvidence('chat-1', deps({ checkRuns: () => [run()] }))
+    expect(evidence.checks.items[0].note).toContain('not proof the check is unchanged')
+  })
+
   it('lets one unmeasured check pull the whole group down', async () => {
     const evidence = await buildBridgeEvidence(
       'chat-1',
       deps({ checkRuns: () => [run(), run({ runId: 'bchk_2', name: 'lint', state: 'cancelled', exitCode: null })] }),
     )
     expect(evidence.checks.status).toBe('not_measured')
+  })
+})
+
+describe('the reader a backend keeps', () => {
+  it('holds its reads: one pull request read serves the polls inside the window', async () => {
+    createMigratedDb()
+    addProject(CWD, 'Allowed')
+    createConversation('chat-1', CWD, 'claude-code', 'Bridge chat')
+    linkConversationPullRequest('chat-1', REF, 'manual')
+    let reads = 0
+    const read = bridgeEvidenceReader(
+      async () => {
+        reads += 1
+        return READING
+      },
+      () => 10_000,
+    )
+    await read('chat-1')
+    await read('chat-1')
+    expect(reads).toBe(1)
   })
 })

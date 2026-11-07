@@ -72,7 +72,7 @@ object BridgeOrigin {
     fun checksLabel(summary: CheckSummary): String = when (summary.status) {
         EvidenceStatus.Measured ->
             if (summary.failed > 0) "${plural(summary.failed)} failed" else "${plural(summary.passed)} passed"
-        EvidenceStatus.Stale -> "Checks measured on older code"
+        EvidenceStatus.Stale -> "Checks not measured on this code"
         EvidenceStatus.Unavailable -> "Checks could not run"
         EvidenceStatus.NotMeasured -> "Checks not measured"
     }

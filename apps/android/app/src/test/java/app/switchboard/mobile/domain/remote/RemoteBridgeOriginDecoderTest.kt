@@ -101,7 +101,7 @@ class RemoteBridgeOriginDecoderTest {
         assertEquals("1 check passed", label(BridgeOrigin.EvidenceStatus.Measured, 1, 0))
         assertEquals("2 checks passed", label(BridgeOrigin.EvidenceStatus.Measured, 2, 0))
         assertEquals("1 check failed", label(BridgeOrigin.EvidenceStatus.Measured, 1, 1))
-        assertEquals("Checks measured on older code", label(BridgeOrigin.EvidenceStatus.Stale, 1, 0))
+        assertEquals("Checks not measured on this code", label(BridgeOrigin.EvidenceStatus.Stale, 1, 0))
         assertEquals("Checks could not run", label(BridgeOrigin.EvidenceStatus.Unavailable, 0, 0))
         assertEquals("Checks not measured", label(BridgeOrigin.EvidenceStatus.NotMeasured, 0, 0))
     }

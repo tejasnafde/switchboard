@@ -576,7 +576,12 @@ export function rollUpBridgeEvidence(statuses: readonly BridgeEvidenceStatus[]):
   return 'measured'
 }
 
-/** What a chat list shows about a bridge chat's checks. Recorded runs only: a list reads no checkout. */
+/**
+ * What a chat list shows about a bridge chat's checks. Recorded runs only.
+ * A list reads no checkout, so `measured` needs a backend that knew the tree
+ * the chat is on now; anything else is `stale`, as `read_chat` would say of
+ * a checkout it did not read.
+ */
 export interface BridgeCheckSummary {
   status: BridgeEvidenceStatus
   passed: number
@@ -605,7 +610,7 @@ export function bridgeChecksLabel(summary: BridgeCheckSummary): string {
         ? `${count(summary.failed, 'check')} failed`
         : `${count(summary.passed, 'check')} passed`
     case 'stale':
-      return 'Checks measured on older code'
+      return 'Checks not measured on this code'
     case 'unavailable':
       return 'Checks could not run'
     default:

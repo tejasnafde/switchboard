@@ -50,6 +50,7 @@ import {
   setConversationWorktree,
 } from '../../src/main/db/database'
 import { setBridgeProjectAllowed } from '../../src/main/bridge/allowlist'
+import { BridgeCheckService, setBridgeCheckService } from '../../src/main/bridge/check-service'
 import { BridgeReadService } from '../../src/main/bridge/read-service'
 import { BridgeDeliveryService, type BridgeCaller } from '../../src/main/bridge/delivery-service'
 import { FakeHost } from './helpers/bridge-delivery-host'
@@ -134,6 +135,32 @@ describe('start_chat', () => {
     expect(getBridgeOrigin(receipt.chat.chat_id)?.callId).toBe(receipt.call_id)
     // A resume after a restart starts on the same account.
     expect(getConversationProviderInstanceId(receipt.chat.chat_id)).toBe('claude-code-work')
+  })
+
+  it('records the baseline before the turn can write it, never beside it', async () => {
+    const order: string[] = []
+    setBridgeCheckService(
+      new BridgeCheckService({
+        enabled: () => true,
+        allowed: () => [],
+        now: () => 7_000,
+        facts: async () => {
+          // A snapshot of a big checkout takes a while; the turn must wait for it.
+          await new Promise((done) => setTimeout(done, 5))
+          order.push('baseline')
+          return { head: 'c'.repeat(40), branch: 'main', tree: 'tree-1', dirty: false }
+        },
+      }),
+    )
+    host.onStart = async (opts) => {
+      order.push('session')
+      host.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+    }
+    const receipt = ok(await start())
+    setBridgeCheckService(null)
+    expect(order).toEqual(['baseline', 'session'])
+    expect(getBridgeOrigin(receipt.chat.chat_id)).toMatchObject({ baselineTree: 'tree-1', baselineAt: 7_000 })
+    expect(host.dispatched).toHaveLength(1)
   })
 
   it('replays the same key and body, refuses a changed body, and never sends twice', async () => {

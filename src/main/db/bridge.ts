@@ -6,11 +6,13 @@ import {
   bridgePolicyModesValid,
   canonicalBridgeCheck,
   parseBridgeCheckDefinitions,
+  rollUpBridgeEvidence,
   type BridgeCallState,
   type BridgeCheckDefinition,
   type BridgeCheckOutcome,
   type BridgeCheckSummary,
   type BridgeErrorCode,
+  type BridgeEvidenceStatus,
   type BridgeOperation,
   type BridgeOriginMarker,
   type BridgeOriginStopState,
@@ -515,14 +517,15 @@ export function setBridgeOriginStopState(conversationIds: string[], state: Bridg
 /**
  * Every chat with a bridge origin, as the chat lists mark it: root id to its
  * marker, with the measured-check summary read from the recorded runs. No
- * checkout is read here: a list must not spawn git for every row.
+ * checkout is read here: a list must not spawn git for every row, so a
+ * summary is measured only for a chat whose current tree the caller passes.
  */
-export function bridgeOriginMarkers(): Map<string, BridgeOriginMarker> {
+export function bridgeOriginMarkers(currentTrees?: ReadonlyMap<string, string>): Map<string, BridgeOriginMarker> {
   const rows = getDb().prepare('SELECT conversation_id, stop_state FROM bridge_origins').all() as Array<
     Pick<OriginRow, 'conversation_id' | 'stop_state'>
   >
   if (rows.length === 0) return new Map()
-  const checks = bridgeCheckSummaries()
+  const checks = bridgeCheckSummaries(currentTrees)
   return new Map(
     rows.map((r) => {
       const summary = checks.get(r.conversation_id)
@@ -722,6 +725,34 @@ const toCheckRun = (r: CheckRunRow): BridgeCheckRun => ({
   endedAt: r.ended_at,
 })
 
+/** How a recorded run reads against the tree the checkout is on now. */
+export interface BridgeCheckRunProjection {
+  status: BridgeEvidenceStatus
+  /** The source changed while the run was going, so it did not test one tree. */
+  sourceMoved: boolean
+  /** The checkout is still on the tree the run started from. */
+  current: boolean
+}
+
+/**
+ * The ONE rule every surface judges a recorded run by, so a chat row, a
+ * phone and the Settings panel never claim more than `read_chat` does. A
+ * finished run is measured only when the checkout is still on the tree it
+ * started from, nothing moved while it ran, and the chat did not touch what
+ * decides the check. `currentTree` is the tree the checkout is on NOW; null
+ * means it was not read, which is never a measurement of the current code.
+ */
+export function projectBridgeCheckRun(
+  run: Pick<BridgeCheckRun, 'state' | 'treeBefore' | 'treeAfter' | 'definitionChanged'>,
+  currentTree: string | null,
+): BridgeCheckRunProjection {
+  const sourceMoved = run.treeAfter !== null && run.treeAfter !== run.treeBefore
+  const current = currentTree !== null && currentTree === run.treeBefore && !sourceMoved
+  if (run.state === 'unavailable') return { status: 'unavailable', sourceMoved, current }
+  if (run.state !== 'finished') return { status: 'not_measured', sourceMoved, current }
+  return { status: current && !run.definitionChanged ? 'measured' : 'stale', sourceMoved, current }
+}
+
 /** What a recorded run ended as. Only a run that finished with exit 0 passed. */
 export function bridgeCheckOutcome(run: BridgeCheckRun): BridgeCheckOutcome {
   if (run.state === 'unavailable') return 'unavailable'
@@ -858,10 +889,15 @@ export function listBridgeCheckRuns(conversationId: string): BridgeCheckRun[] {
 
 /**
  * Root chat id to the summary a chat list shows: the newest run per check
- * name, counted. A run that was cancelled, flagged or never finished is not
- * measured, and one unmeasured check makes the whole summary unmeasured.
+ * name, judged by `projectBridgeCheckRun` and counted. One unmeasured check
+ * makes the whole summary unmeasured.
+ *
+ * A list reads no checkout, so the caller passes the tree each chat is on
+ * now for the chats it knows. A chat with no tree given is never measured:
+ * that is what `read_chat` says about a checkout it did not read, and a row
+ * must never claim more than that.
  */
-export function bridgeCheckSummaries(): Map<string, BridgeCheckSummary> {
+export function bridgeCheckSummaries(currentTrees?: ReadonlyMap<string, string>): Map<string, BridgeCheckSummary> {
   const rows = getDb().prepare('SELECT * FROM bridge_check_runs ORDER BY started_at DESC').all() as CheckRunRow[]
   const newest = new Map<string, CheckRunRow>()
   for (const row of rows) {
@@ -870,14 +906,14 @@ export function bridgeCheckSummaries(): Map<string, BridgeCheckSummary> {
   }
   const summaries = new Map<string, BridgeCheckSummary>()
   for (const row of newest.values()) {
+    const run = toCheckRun(row)
+    const { status } = projectBridgeCheckRun(run, currentTrees?.get(row.conversation_id) ?? null)
     const summary = summaries.get(row.conversation_id) ?? { status: 'measured', passed: 0, failed: 0 }
-    if (row.state === 'unavailable') summary.status = 'unavailable'
-    else if (row.state !== 'finished')
-      summary.status = summary.status === 'unavailable' ? summary.status : 'not_measured'
-    else if (row.definition_changed === 1 || (row.tree_after !== null && row.tree_after !== row.tree_before))
-      summary.status = summary.status === 'measured' ? 'stale' : summary.status
-    else if (row.exit_code === 0) summary.passed += 1
-    else summary.failed += 1
+    if (status === 'measured') {
+      if (run.exitCode === 0) summary.passed += 1
+      else summary.failed += 1
+    }
+    summary.status = rollUpBridgeEvidence([summary.status, status])
     summaries.set(row.conversation_id, summary)
   }
   return summaries

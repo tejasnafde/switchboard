@@ -262,7 +262,7 @@ describe('measured evidence', () => {
     expect(bridgeChecksLabel({ status: 'measured', passed: 1, failed: 0 })).toBe('1 check passed')
     expect(bridgeChecksLabel({ status: 'measured', passed: 2, failed: 0 })).toBe('2 checks passed')
     expect(bridgeChecksLabel({ status: 'measured', passed: 1, failed: 1 })).toBe('1 check failed')
-    expect(bridgeChecksLabel({ status: 'stale', passed: 1, failed: 0 })).toBe('Checks measured on older code')
+    expect(bridgeChecksLabel({ status: 'stale', passed: 1, failed: 0 })).toBe('Checks not measured on this code')
     expect(bridgeChecksLabel({ status: 'unavailable', passed: 0, failed: 0 })).toBe('Checks could not run')
     expect(bridgeChecksLabel({ status: 'not_measured', passed: 0, failed: 0 })).toBe('Checks not measured')
   })

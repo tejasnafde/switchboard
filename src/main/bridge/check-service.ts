@@ -9,7 +9,10 @@
  * definition hash and the source snapshot, so the same code is never checked
  * twice and a read never starts a run. A new turn cancels a run in flight,
  * and a source change during a run is recorded (the result then reads as
- * stale, never as a measurement of the current tree).
+ * stale, never as a measurement of the current tree). Nothing is scheduled
+ * or spawned while a stop of bridge work stands, and a stop kills a run in
+ * flight and records it as cancelled (`cancelAll`, called by the stop
+ * service): a program this desktop starts on its own is bridge work.
  *
  * The service records only what it observed: the definition hash, where it
  * ran, the trees before and after, the real exit code or signal, and a
@@ -28,6 +31,7 @@ import {
   finishBridgeCheckRun,
   getBridgeOrigin,
   getConversationExecutionRoot,
+  readBridgeStopRecord,
   resolveRootThreadId,
   setBridgeOriginBaseline,
 } from '../db/database'
@@ -44,8 +48,33 @@ const SETTLE_MS = 1_500
 export const BRIDGE_CHECK_TIMEOUT_MS = 10 * 60 * 1000
 /** Output kept for the digest. Past this the digest covers the first bytes and `log_bytes` says so. */
 const LOG_MAX_BYTES = 256 * 1024
-/** Threads whose edited files are remembered between a turn's end and its run. */
+/** Threads whose edited files are remembered between a bridge call and its runs. */
 const EDITS_MAX_THREADS = 200
+/** Paths kept per chat. Past this nothing more is recorded and the set, now incomplete, attributes nothing. */
+const EDITS_MAX_PATHS = 2_000
+
+/**
+ * Files in the execution root that commonly decide what a runner does, so a
+ * turn that wrote one may have changed what a check runs without touching
+ * any path the definition names (`npm run test` and `scripts.test`, say).
+ * The flag this raises is one way only: it means the chat touched something
+ * that decides what the check runs. No flag is not proof the check is
+ * unchanged, which no rule here can decide.
+ */
+const BRIDGE_CHECK_DEFINING_FILES: readonly string[] = [
+  'package.json',
+  'package-lock.json',
+  'Makefile',
+  'pyproject.toml',
+  'pytest.ini',
+  'tox.ini',
+  'Cargo.toml',
+  'go.mod',
+  'build.gradle',
+  'build.gradle.kts',
+]
+/** Everything under this top-level directory counts too: a check usually runs one of its files. */
+const BRIDGE_CHECK_DEFINING_DIR = 'scripts/'
 
 export interface BridgeCheckProcessResult {
   /** The process's real exit code, or null when a signal ended it. */
@@ -92,7 +121,12 @@ export function bridgeCheckDefinitionPaths(def: BridgeCheckDefinition, root: str
   return [...new Set(tokens.map(inside).filter((p): p is string => p !== null))]
 }
 
-/** True when the turn wrote a file the definition names. */
+/**
+ * True when the turn wrote a file the definition names, or one of the files
+ * that decide what a runner does (`BRIDGE_CHECK_DEFINING_FILES`). False is
+ * not proof the check is unchanged: a runner can reach what it runs through
+ * any file, and nothing here follows that indirection.
+ */
 export function bridgeCheckDefinitionTouched(
   def: BridgeCheckDefinition,
   root: string,
@@ -100,7 +134,9 @@ export function bridgeCheckDefinitionTouched(
 ): boolean {
   if (editedRelPaths.length === 0) return false
   const named = new Set(bridgeCheckDefinitionPaths(def, root))
-  return editedRelPaths.some((p) => named.has(p))
+  return editedRelPaths.some(
+    (p) => named.has(p) || BRIDGE_CHECK_DEFINING_FILES.includes(p) || p.startsWith(BRIDGE_CHECK_DEFINING_DIR),
+  )
 }
 
 function defaultRun(input: {
@@ -157,35 +193,59 @@ function defaultRun(input: {
   })
 }
 
+/** The paths a chat changed since its baseline: all of them, and those its own edit tools wrote. */
+interface ChatEdits {
+  all: Set<string>
+  mine: Set<string>
+  /** False once a set hit its cap, so `mine` can no longer cover a diff. */
+  complete: boolean
+}
+
 export class BridgeCheckService {
   /** Root chat id to the controller of the run or settle in flight for it. */
   private readonly inFlight = new Map<string, AbortController>()
-  /** Root chat id to the files its last turn changed, as the diff cards saw them. */
-  private readonly edits = new Map<string, Set<string>>()
+  /** Root chat id to what it changed since its baseline, as the diff cards saw it. */
+  private readonly edits = new Map<string, ChatEdits>()
   private disposed = false
 
   constructor(private readonly host: BridgeCheckHost) {}
 
   /**
    * A bridge call reached the chat: record the checkout as the baseline a
-   * later read diffs against, before the turn runs. Fire and forget; a
+   * later read diffs against. The caller awaits this BEFORE the turn can
+   * write, or the baseline would already hold the turn's own changes. A
    * checkout that cannot be read leaves the baseline as it was.
    */
   async noteBridgeCall(chatId: string, cwd: string): Promise<void> {
+    const root = this.root(chatId)
     const facts = await this.facts(cwd)
     if (!facts) return
     try {
-      setBridgeOriginBaseline(chatId, { tree: facts.tree, commit: facts.head, at: this.host.now() })
+      setBridgeOriginBaseline(root, { tree: facts.tree, commit: facts.head, at: this.host.now() })
+      // The edits a read attributes are the ones made after this baseline.
+      this.edits.delete(root)
     } catch (err) {
       log.warn('could not record the bridge turn baseline', { err: String(err) })
     }
+  }
+
+  /**
+   * The paths this chat's own edit tools wrote since its baseline. Null when
+   * nothing recorded them (a restart, or a set past its cap), which
+   * attributes nothing to the chat.
+   */
+  writtenSinceBaseline(chatId: string): readonly string[] | null {
+    const edits = this.edits.get(this.root(chatId))
+    if (!edits || !edits.complete) return null
+    return [...edits.mine]
   }
 
   /** Subscribed to the registry's event bus. */
   noteEvent(event: RuntimeEvent): void {
     if (!('threadId' in event) || typeof event.threadId !== 'string') return
     if (event.type === 'file.edited') {
-      this.noteEdit(event.threadId, event.relPath)
+      // Only an absent `noRevert` means the turn's checkpoint saw this chat's own tools write it.
+      this.noteEdit(event.threadId, event.relPath, event.noRevert === undefined)
       return
     }
     // A turn that starts invalidates whatever was scheduled: the source is about to change.
@@ -210,6 +270,15 @@ export class BridgeCheckService {
     }
   }
 
+  /**
+   * A stop of bridge work covers a check it started: every run in flight is
+   * killed and recorded as cancelled, never as the pass or the fail it did
+   * not observe. The stop record is written first, so nothing starts again.
+   */
+  cancelAll(): void {
+    for (const chatId of [...this.inFlight.keys()]) this.cancel(chatId)
+  }
+
   dispose(): void {
     this.disposed = true
     for (const controller of this.inFlight.values()) controller.abort()
@@ -227,6 +296,10 @@ export class BridgeCheckService {
     const root = this.root(chatId)
     const plan = this.plan(root)
     if (!plan) return
+    if (this.stopped(root)) {
+      log.info('bridge work is stopped, so no check was scheduled', { chatId: root })
+      return
+    }
     this.cancel(root)
     const controller = new AbortController()
     this.inFlight.set(root, controller)
@@ -236,10 +309,10 @@ export class BridgeCheckService {
         if (!stable) log.info('the checkout kept changing, so no check ran', { chatId: root })
         return
       }
-      const edited = [...(this.edits.get(root) ?? [])]
-      this.edits.delete(root)
+      const edited = [...(this.edits.get(root)?.all ?? [])]
       for (const definition of plan.checks) {
-        if (controller.signal.aborted) return
+        // The stop record is read again before each program: a kill may have come while one ran.
+        if (controller.signal.aborted || this.stopped(root)) return
         await this.runOne({ root, plan, definition, before: stable, edited, signal: controller.signal })
       }
     } catch (err) {
@@ -360,12 +433,35 @@ export class BridgeCheckService {
     return (this.host.facts ?? readBridgeGitFacts)(cwd)
   }
 
-  private noteEdit(threadId: string, relPath: string): void {
+  /**
+   * No check is scheduled or spawned while a kill stands, or after a stop of
+   * all bridge work that came since this chat's last bridge call: the owner
+   * stopped the work, and a program this desktop starts on its own is part
+   * of it.
+   */
+  private stopped(root: string): boolean {
+    try {
+      const stop = readBridgeStopRecord()
+      if (stop.killed) return true
+      const origin = getBridgeOrigin(root)
+      return origin !== null && origin.stopGeneration < stop.generation
+    } catch (err) {
+      // A stop that cannot be read is treated as standing: a check is never the safe default.
+      log.warn('could not read the bridge stop record for a check', { err: String(err) })
+      return true
+    }
+  }
+
+  private noteEdit(threadId: string, relPath: string, mine: boolean): void {
     const root = this.root(threadId)
-    const set = this.edits.get(root) ?? new Set<string>()
-    set.add(relPath)
+    const edits = this.edits.get(root) ?? { all: new Set<string>(), mine: new Set<string>(), complete: true }
+    if (edits.all.size >= EDITS_MAX_PATHS) edits.complete = false
+    else {
+      edits.all.add(relPath)
+      if (mine) edits.mine.add(relPath)
+    }
     this.edits.delete(root)
-    this.edits.set(root, set)
+    this.edits.set(root, edits)
     if (this.edits.size > EDITS_MAX_THREADS) this.edits.delete(this.edits.keys().next().value!)
   }
 

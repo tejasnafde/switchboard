@@ -27,7 +27,7 @@ export function checkResultText(result: BridgeCheckResultRow): string {
     case 'measured':
       return `${result.outcome === 'passed' ? 'Passed' : `Failed (exit ${result.exit_code ?? '?'})`}${when}`
     case 'stale':
-      return `${result.outcome === 'passed' ? 'Passed' : 'Failed'} on older code${when}`
+      return `${result.outcome === 'passed' ? 'Passed' : 'Failed'}, not on the code now${when}`
     case 'unavailable':
       return `Could not run${when}`
     default:
@@ -89,7 +89,10 @@ export function BridgeChecksPanel() {
         <p className="m-0 px-[14px] pb-1 pt-3 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
           A check runs once after a bridge turn ends, when the folder has stopped changing. Its exit code is the only
           thing Switchboard reports as measured. What the agent writes about tests is never a result. Each check is a
-          program and its arguments, so nothing is run through a shell. At most {BRIDGE_CHECKS_MAX} per project.
+          program and its arguments, so nothing is run through a shell. At most {BRIDGE_CHECKS_MAX} per project. A
+          result is flagged when the chat wrote a file that decides what a check runs (package.json, a lock file, a
+          Makefile, anything under scripts/). No flag is not proof the check itself is unchanged. This panel reads no
+          checkout, so a result here is never reported as being about the code as it is now.
         </p>
         {projects.length === 0 && (
           <p className="m-0 px-[14px] py-3 text-[12px] text-[var(--text-muted)]">No allowed projects yet.</p>

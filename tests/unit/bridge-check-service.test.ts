@@ -22,6 +22,7 @@ import {
   saveBridgeProjectPolicy,
   bridgeCheckSummaries,
   getBridgeOrigin,
+  writeBridgeStopRecord,
 } from '../../src/main/db/database'
 import { secretRedactor } from '../../src/main/secrets/secret-redactor'
 import {
@@ -93,6 +94,27 @@ beforeEach(() => {
 afterEach(() => {
   secretRedactor.clear()
 })
+
+/** One diff card of the chat's own edit tools (no `noRevert`), as the bus reports it. */
+function edit(checks: BridgeCheckService, relPath: string, noRevert?: 'outside'): void {
+  checks.noteEvent({
+    type: 'file.edited',
+    threadId: CHAT,
+    turnId: 't1',
+    fileEditId: `t1:${relPath}`,
+    repoRoot: ROOT,
+    relPath,
+    changeKind: 'modify',
+    oldContent: '',
+    newContent: '',
+    ...(noRevert ? { noRevert } : {}),
+  } as never)
+}
+
+/** The summary a chat list shows, with the tree the checkout is on now. */
+function summary(tree: string | null = facts.tree) {
+  return bridgeCheckSummaries(tree === null ? undefined : new Map([[CHAT, tree]])).get(CHAT)
+}
 
 function origin(): void {
   recordBridgeOrigin({
@@ -183,7 +205,7 @@ describe('what a run records', () => {
     result = { ...result, code: 2 }
     await service().onTurnEnded(CHAT)
     expect(listBridgeCheckRuns(CHAT)[0]).toMatchObject({ state: 'finished', exitCode: 2 })
-    expect(bridgeCheckSummaries().get(CHAT)).toEqual({ status: 'measured', passed: 0, failed: 1 })
+    expect(summary()).toEqual({ status: 'measured', passed: 0, failed: 1 })
   })
 
   it('records no log digest when the check wrote nothing', async () => {
@@ -198,7 +220,7 @@ describe('what a run records', () => {
     result = { code: null, signal: null, output: '', bytes: 0, failedToStart: true, timedOut: false }
     await service().onTurnEnded(CHAT)
     expect(listBridgeCheckRuns(CHAT)[0].state).toBe('unavailable')
-    expect(bridgeCheckSummaries().get(CHAT)).toEqual({ status: 'unavailable', passed: 0, failed: 0 })
+    expect(summary()).toEqual({ status: 'unavailable', passed: 0, failed: 0 })
   })
 
   it('binds a dirty run to its snapshot and to no commit', async () => {
@@ -213,7 +235,7 @@ describe('what a run records', () => {
     treeAfterRun = 'tree-edited'
     await service().onTurnEnded(CHAT)
     expect(listBridgeCheckRuns(CHAT)[0]).toMatchObject({ treeBefore: 'tree-1', treeAfter: 'tree-edited' })
-    expect(bridgeCheckSummaries().get(CHAT)).toEqual({ status: 'stale', passed: 0, failed: 0 })
+    expect(summary()).toEqual({ status: 'stale', passed: 0, failed: 0 })
   })
 
   it('digests the masked output, so a saved secret never decides the digest', async () => {
@@ -253,44 +275,24 @@ describe('cancelling and invalidating', () => {
     })
     await checks.onTurnEnded(CHAT)
     expect(listBridgeCheckRuns(CHAT)[0].state).toBe('cancelled')
-    expect(bridgeCheckSummaries().get(CHAT)).toEqual({ status: 'not_measured', passed: 0, failed: 0 })
+    expect(summary()).toEqual({ status: 'not_measured', passed: 0, failed: 0 })
   })
 
   it('flags a check whose definition the chat changed', async () => {
     origin()
     const script: BridgeCheckDefinition = { name: 'gate', program: './scripts/gate.sh', args: [] }
     const checks = service({}, [script])
-    checks.noteEvent({
-      type: 'file.edited',
-      threadId: CHAT,
-      turnId: 't1',
-      fileEditId: 't1:scripts/gate.sh',
-      repoRoot: ROOT,
-      relPath: 'scripts/gate.sh',
-      changeKind: 'modify',
-      oldContent: '',
-      newContent: '',
-    } as never)
+    edit(checks, 'scripts/gate.sh')
     await checks.onTurnEnded(CHAT)
     expect(listBridgeCheckRuns(CHAT)[0].definitionChanged).toBe(true)
-    expect(bridgeCheckSummaries().get(CHAT)).toEqual({ status: 'stale', passed: 0, failed: 0 })
+    expect(summary()).toEqual({ status: 'stale', passed: 0, failed: 0 })
   })
 
   it('leaves a check alone when the turn changed another file', async () => {
     origin()
     const script: BridgeCheckDefinition = { name: 'gate', program: './scripts/gate.sh', args: [] }
     const checks = service({}, [script])
-    checks.noteEvent({
-      type: 'file.edited',
-      threadId: CHAT,
-      turnId: 't1',
-      fileEditId: 't1:src/app.ts',
-      repoRoot: ROOT,
-      relPath: 'src/app.ts',
-      changeKind: 'modify',
-      oldContent: '',
-      newContent: '',
-    } as never)
+    edit(checks, 'src/app.ts')
     await checks.onTurnEnded(CHAT)
     expect(listBridgeCheckRuns(CHAT)[0].definitionChanged).toBe(false)
   })
@@ -326,5 +328,82 @@ describe('definition paths', () => {
     expect(bridgeCheckDefinitionTouched(def, ROOT, ['scripts/gate.sh'])).toBe(true)
     expect(bridgeCheckDefinitionTouched(def, ROOT, ['src/app.ts'])).toBe(false)
     expect(bridgeCheckDefinitionTouched(def, ROOT, [])).toBe(false)
+  })
+})
+
+describe('a check the chat itself decided', () => {
+  const RUN_TEST: BridgeCheckDefinition = { name: 'tests', program: 'npm', args: ['run', 'test'] }
+
+  it('flags a turn that rewrote what the runner runs, not only a path the arguments name', async () => {
+    origin()
+    const checks = service({}, [RUN_TEST])
+    edit(checks, 'package.json')
+    await checks.onTurnEnded(CHAT)
+    expect(listBridgeCheckRuns(CHAT)[0].definitionChanged).toBe(true)
+  })
+
+  it('flags a file under the top-level scripts folder and leaves other sources alone', () => {
+    expect(bridgeCheckDefinitionTouched(RUN_TEST, ROOT, ['scripts/test.sh'])).toBe(true)
+    expect(bridgeCheckDefinitionTouched(RUN_TEST, ROOT, ['package-lock.json'])).toBe(true)
+    expect(bridgeCheckDefinitionTouched(RUN_TEST, ROOT, ['Makefile'])).toBe(true)
+    expect(bridgeCheckDefinitionTouched(RUN_TEST, ROOT, ['src/scripts/test.sh'])).toBe(false)
+    expect(bridgeCheckDefinitionTouched(RUN_TEST, ROOT, ['src/app.ts'])).toBe(false)
+  })
+})
+
+describe('a stop of all bridge work', () => {
+  it('schedules nothing while a kill stands', async () => {
+    origin()
+    writeBridgeStopRecord({ generation: 1, killed: true, killPending: false })
+    await service().onTurnEnded(CHAT)
+    expect(runs).toEqual([])
+    expect(listBridgeCheckRuns(CHAT)).toEqual([])
+  })
+
+  it("schedules nothing after a stop that came since the chat's last bridge call", async () => {
+    origin()
+    writeBridgeStopRecord({ generation: 2, killed: false, killPending: false })
+    await service().onTurnEnded(CHAT)
+    expect(runs).toEqual([])
+  })
+
+  it('kills a run in flight and records it as cancelled, never as the pass it did not see', async () => {
+    origin()
+    const checks: BridgeCheckService = service({
+      run: async (input) => {
+        runs.push({ definition: input.definition, cwd: input.cwd })
+        writeBridgeStopRecord({ generation: 1, killed: true, killPending: true })
+        checks.cancelAll()
+        return { code: 0, signal: 'SIGKILL', output: '', bytes: 0, failedToStart: false, timedOut: false }
+      },
+    })
+    await checks.onTurnEnded(CHAT)
+    expect(listBridgeCheckRuns(CHAT)[0].state).toBe('cancelled')
+    expect(summary()).toEqual({ status: 'not_measured', passed: 0, failed: 0 })
+  })
+})
+
+describe('what a chat list may claim', () => {
+  it('drops a pass once the checkout moved on with no turn in between', async () => {
+    origin()
+    await service().onTurnEnded(CHAT)
+    expect(summary()).toEqual({ status: 'measured', passed: 1, failed: 0 })
+    // The owner edits a file in their editor: no turn, so nothing cancelled the run.
+    expect(summary('tree-edited')).toEqual({ status: 'stale', passed: 0, failed: 0 })
+    // And a list that read no checkout claims nothing about the code now.
+    expect(bridgeCheckSummaries().get(CHAT)).toEqual({ status: 'stale', passed: 0, failed: 0 })
+  })
+})
+
+describe('what this chat wrote', () => {
+  it('keeps the paths its own edit tools wrote, and nothing it only saw change', async () => {
+    origin()
+    const checks = service()
+    edit(checks, 'src/app.ts')
+    edit(checks, 'src/other.ts', 'outside')
+    expect(checks.writtenSinceBaseline(CHAT)).toEqual(['src/app.ts'])
+    // A new bridge call records a new baseline, so the set starts again with it.
+    await checks.noteBridgeCall(CHAT, ROOT)
+    expect(checks.writtenSinceBaseline(CHAT)).toBeNull()
   })
 })

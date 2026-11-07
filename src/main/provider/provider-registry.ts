@@ -226,7 +226,7 @@ import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '
 import { buildBridgeTools } from '../mcp/bridge-tools'
 import { BridgeReadService } from '../bridge/read-service'
 import { BridgeCheckService, setBridgeCheckService } from '../bridge/check-service'
-import { bridgeEvidenceDeps, buildBridgeEvidence } from '../bridge/evidence'
+import { bridgeEvidenceReader } from '../bridge/evidence'
 import { readPullRequestForBridge } from '../ipc/pull-requests'
 import { BridgeDeliveryService, type BridgeDeliveryHost } from '../bridge/delivery-service'
 import { instinctBridgeEnabled } from '@shared/bridge'
@@ -628,7 +628,9 @@ export class ProviderRegistry implements PeerToolHost {
         busy: (chatId) => this.isBusy(chatId),
         pending: (chatId) => this.getPendingRequests(chatId),
       },
-      evidence: (chatId) => buildBridgeEvidence(chatId, bridgeEvidenceDeps(readPullRequestForBridge)),
+      // One reader for the process: its held git and pull request reads only
+      // work while the same deps serve every poll.
+      evidence: bridgeEvidenceReader(readPullRequestForBridge),
     })
     this.bus.subscribe((event) => this.bridgeReads.noteEvent(event))
     this.bridgeChecks = new BridgeCheckService({

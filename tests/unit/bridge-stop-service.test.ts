@@ -25,6 +25,7 @@ import {
   type BridgeOriginSource,
 } from '../../src/main/db/database'
 import { BRIDGE_CLEAR_KILL_COMMAND, BridgeStopService, type BridgeStopHost } from '../../src/main/bridge/stop-service'
+import { BridgeCheckService, setBridgeCheckService } from '../../src/main/bridge/check-service'
 import { BRIDGE_CALL_RETENTION_MS, BRIDGE_CONTROL_LEASE_MS } from '../../src/shared/bridge'
 
 const NOW = 1_800_000_000_000
@@ -178,6 +179,23 @@ describe('Stop all on this desktop', () => {
     await service.applyControl({ stop_generation: 2, killed: true })
     expect(readBridgeStopRecord()).toMatchObject({ generation: 2, killed: true, killPending: false })
     expect(host.frames).toEqual([{ type: 'stop_ack', stop_generation: 2, state: 'confirmed' }])
+  })
+
+  it('kills a measured check it started, before the chats stop', async () => {
+    const order: string[] = []
+    const checks = new BridgeCheckService({ enabled: () => true, allowed: () => [], now: () => NOW })
+    const cancelAll = vi.spyOn(checks, 'cancelAll').mockImplementation(() => order.push('checks'))
+    setBridgeCheckService(checks)
+    host.active.set('b1', 'local')
+    const stopGroups = host.stopGroups
+    host.stopGroups = async (sources) => {
+      order.push('chats')
+      return stopGroups(sources)
+    }
+    await service.stopAll()
+    expect(cancelAll).toHaveBeenCalledTimes(1)
+    expect(order).toEqual(['checks', 'chats'])
+    setBridgeCheckService(null)
   })
 
   it('a pending kill survives a relay that moved on without it', async () => {

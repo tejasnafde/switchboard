@@ -14,7 +14,6 @@ import {
   defaultBridgeProjectPolicy,
   parseBridgeCheckDefinitions,
   type BridgeCheckResultRow,
-  type BridgeEvidenceStatus,
   type BridgeProjectChecksRow,
   type BridgeProjectSetupRow,
 } from '@shared/bridge'
@@ -28,8 +27,8 @@ import {
   hubInstallId,
   latestBridgeCheckRunsForProject,
   listBridgeProjectPolicies,
+  projectBridgeCheckRun,
   saveBridgeProjectPolicy,
-  type BridgeCheckRun,
 } from '../db/database'
 import { createMainLogger } from '../logger'
 
@@ -105,20 +104,13 @@ export function listBridgeChecksSetup(machineId = hubInstallId()): BridgeProject
       checks: policy.checks,
       results: latestBridgeCheckRunsForProject(policy.project_id).map((run): BridgeCheckResultRow => ({
         name: run.name,
-        status: checkRunStatus(run),
+        // The panel reads no checkout, so no result here is about the current code.
+        status: projectBridgeCheckRun(run, null).status,
         outcome: bridgeCheckOutcome(run),
         exit_code: run.exitCode,
         at: run.endedAt,
       })),
     }))
-}
-
-/** The same rule the read projection uses: a moved source or a changed definition is never measured. */
-function checkRunStatus(run: BridgeCheckRun): BridgeEvidenceStatus {
-  if (run.state === 'unavailable') return 'unavailable'
-  if (run.state !== 'finished') return 'not_measured'
-  if (run.definitionChanged || (run.treeAfter !== null && run.treeAfter !== run.treeBefore)) return 'stale'
-  return 'measured'
 }
 
 /**

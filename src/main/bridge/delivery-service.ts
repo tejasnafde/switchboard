@@ -75,14 +75,18 @@ import { bridgeProjectAgents, type AllowedProject, type BridgeReadService, type 
 const log = createMainLogger('bridge:delivery')
 
 /**
- * Records the baseline a later read diffs against (`noteBridgeCall`). Fire
- * and forget: the turn must not wait for git.
+ * Records the baseline a later read diffs against (`noteBridgeCall`). The
+ * caller AWAITS it before the turn can write: a baseline taken while the
+ * agent writes already holds that write, and the read would then report
+ * that nothing changed. A failure leaves the baseline as it was.
  */
-function noteBridgeCallBaseline(chatId: string, cwd: string | null): void {
+async function noteBridgeCallBaseline(chatId: string, cwd: string | null): Promise<void> {
   if (!cwd) return
-  void bridgeCheckService()
-    ?.noteBridgeCall(chatId, cwd)
-    .catch((err: unknown) => log.warn('recording the bridge turn baseline failed', { err: String(err) }))
+  try {
+    await bridgeCheckService()?.noteBridgeCall(chatId, cwd)
+  } catch (err) {
+    log.warn('recording the bridge turn baseline failed', { err: String(err) })
+  }
 }
 
 export const BRIDGE_MESSAGE_MAX_CHARS = 20_000
@@ -381,8 +385,10 @@ export class BridgeDeliveryService {
           source: callerSource(caller),
         })
       })()
-      noteBridgeCallBaseline(chatId, project.sidebarPath)
       const fence = this.fence(chatId)
+      // Before the provider starts, so no write of this turn is in the baseline.
+      // The fence above is taken first, so a stop during this read still fences the start.
+      await noteBridgeCallBaseline(chatId, project.sidebarPath)
       const ref = { machine_id: machineId, chat_id: chatId }
       try {
         const session = await this.host.startSession({
@@ -487,7 +493,10 @@ export class BridgeDeliveryService {
         source: callerSource(caller),
       })
       const root = getConversationExecutionRoot(chatId)
-      noteBridgeCallBaseline(chatId, root?.worktreePath ?? root?.projectPath ?? null)
+      // Before the message is delivered, so no write of this turn is in the baseline.
+      await noteBridgeCallBaseline(chatId, root?.worktreePath ?? root?.projectPath ?? null)
+      // That read awaited: a stop may have come meanwhile.
+      if (this.fenced(chatId, fence)) return this.reject(callId, stoppedBeforeSend(ref))
       const live = this.host.liveThread(chatId) ?? chatId
       const actual: BridgeActualDelivery =
         peerDelivery(this.host.provider(live), this.host.midTurn(live), requested, this.host.steerBlocked(live)) ??

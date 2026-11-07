@@ -12,8 +12,9 @@
  *
  * This works with the `instinct_bridge` flag off too: a saved kill, the
  * generation, status and stops stay in force for existing bridge origins.
- * Start-time recovery here also cancels a measured check the previous
- * process was still running, so none can report a result it never had.
+ * A stop also kills a measured check this desktop was running, and
+ * start-time recovery cancels one the previous process left behind, so none
+ * can report a result it never had.
  */
 import {
   BRIDGE_CONTROL_LEASE_MS,
@@ -31,6 +32,7 @@ import {
   type BridgeOriginSource,
 } from '../db/database'
 import { createMainLogger } from '../logger'
+import { bridgeCheckService } from './check-service'
 
 const log = createMainLogger('bridge:stop')
 
@@ -248,6 +250,9 @@ export class BridgeStopService {
   }
 
   private async runStop(generation: number): Promise<BridgeStopResult> {
+    // A measured check this desktop started is bridge work too: kill it first,
+    // recorded as cancelled, and the gate in the check service starts no more.
+    bridgeCheckService()?.cancelAll()
     const { stopped, unconfirmed } = await this.host.stopGroups()
     const result: BridgeStopResult = {
       generation,

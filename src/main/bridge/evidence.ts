@@ -26,11 +26,13 @@ import {
   getConversationExecutionRoot,
   listBridgeCheckRuns,
   listConversationPullRequests,
+  projectBridgeCheckRun,
   sharesExecutionRoot,
   type BridgeCheckRun,
 } from '../db/database'
 import { createMainLogger } from '../logger'
-import { countChangedFiles, readBridgeGitFacts, type BridgeGitFacts } from './git-facts'
+import { bridgeCheckService } from './check-service'
+import { listChangedFiles, readBridgeGitFacts, type BridgeGitFacts } from './git-facts'
 
 const log = createMainLogger('bridge:evidence')
 
@@ -48,10 +50,17 @@ export interface BridgeEvidenceDeps {
   /** The checkout the chat runs in, or null when it has none. */
   executionRoot(chatId: string): { cwd: string; revision: number | null } | null
   facts(cwd: string): Promise<BridgeGitFacts | null>
-  changedFiles(cwd: string, fromTree: string, toTree: string): Promise<number | null>
+  /** The paths that differ from the baseline tree, or null when the diff cannot be read. */
+  changedFiles(cwd: string, fromTree: string, toTree: string): Promise<string[] | null>
   /** True when another chat is rooted at the same checkout, so nothing here proves who wrote a file. */
   shared(chatId: string, cwd: string): boolean
   baselineTree(chatId: string): string | null
+  /**
+   * The paths this chat's own edit tools wrote since the baseline, from the
+   * turn's checkpoint. Null when that set is not known (nothing recorded it,
+   * or it ran past its cap), which attributes nothing.
+   */
+  writtenSinceBaseline(chatId: string): readonly string[] | null
   prLinks(chatId: string): PrRef[]
   /** Null when the host could not be read: that is `unavailable`, never "no pull request". */
   readPr(ref: PrRef): Promise<BridgePrReading | null>
@@ -95,13 +104,28 @@ export function bridgeEvidenceDeps(
       return cwd ? { cwd, revision: root?.revision ?? null } : null
     },
     facts: (cwd) => heldFacts(cwd, () => readBridgeGitFacts(cwd)),
-    changedFiles: (cwd, from, to) => countChangedFiles(cwd, from, to),
+    changedFiles: (cwd, from, to) => listChangedFiles(cwd, from, to),
     shared: (chatId, cwd) => sharesExecutionRoot(chatId, cwd),
     baselineTree: (chatId) => getBridgeOrigin(chatId)?.baselineTree ?? null,
+    writtenSinceBaseline: (chatId) => bridgeCheckService()?.writtenSinceBaseline(chatId) ?? null,
     prLinks: (chatId) => listConversationPullRequests(chatId).map((link) => link.ref),
     readPr: (ref) => heldPr(prKey(ref), () => readPr(ref)),
     checkRuns: (chatId) => listBridgeCheckRuns(chatId),
   }
+}
+
+/**
+ * The reader a backend keeps for the whole process. The holds above live in
+ * the deps, so they only work while one set of deps serves every read: deps
+ * built per call make each poll run a working-tree snapshot and a pull
+ * request read again.
+ */
+export function bridgeEvidenceReader(
+  readPr: (ref: PrRef) => Promise<BridgePrReading | null>,
+  now: () => number = Date.now,
+): (chatId: string) => Promise<BridgeEvidence> {
+  const deps = bridgeEvidenceDeps(readPr, now)
+  return (chatId) => buildBridgeEvidence(chatId, deps)
 }
 
 /** The evidence for one chat. Reads only; it never starts a check and never writes. */
@@ -147,15 +171,24 @@ async function codeEvidence(
         })
   // A shared checkout stays unknown: another chat or the owner may have written these files.
   const shared = deps.shared(chatId, root.cwd)
+  // Attribution needs the stronger evidence: the turn's own checkpoint wrote
+  // every changed file. An editor's change is in the diff and in no written
+  // set, so a chat alone in its checkout proves nothing by itself.
+  const written = deps.writtenSinceBaseline(chatId)
+  const mineSet = written === null ? null : new Set(written)
+  const mine =
+    !shared && changed !== null && changed.length > 0 && mineSet !== null && changed.every((p) => mineSet.has(p))
   const notes: string[] = []
   if (facts.dirty) notes.push('The working tree has changes that are not committed.')
-  if (changed === 0) notes.push('Nothing differs from the baseline recorded for the last bridge call.')
+  if (changed?.length === 0) notes.push('Nothing differs from the baseline recorded for the last bridge call.')
   if (base.baseline_tree === null) notes.push('No baseline was recorded, so no diff was measured.')
   if (shared) notes.push('Another chat shares this checkout, so who made a change is unknown.')
+  else if (!mine && changed !== null && changed.length > 0)
+    notes.push('A changed file is not in what this chat wrote, so who made it is unknown.')
   return {
     ...base,
-    changed_files: changed,
-    attribution: shared || changed === null ? 'unknown' : 'bridge_chat',
+    changed_files: changed?.length ?? null,
+    attribution: mine ? 'bridge_chat' : 'unknown',
     status: 'measured',
     note: notes.join(' ') || 'The checkout matches the commit it is on.',
   }
@@ -195,17 +228,22 @@ async function prEvidence(
         }
       // A link alone proves nothing: the pull request must be on the commit this checkout is on.
       const matches = read.headSha !== null && facts?.head != null && read.headSha === facts.head
+      // With no checkout to compare against, the pull request was read but not judged.
+      const status = facts === null ? 'unavailable' : matches ? 'measured' : 'stale'
       return {
         ...base,
-        status: matches ? 'measured' : 'stale',
+        status,
         url: read.url,
         source_branch: read.sourceBranch,
         state: read.state,
         head_commit: read.headSha,
         checks: read.checks,
-        note: matches
-          ? "The pull request head is the commit this chat's checkout is on."
-          : "The pull request head is not the commit this chat's checkout is on, so it may not hold this work.",
+        note:
+          facts === null
+            ? 'The checkout could not be read, so the pull request head was not compared with it.'
+            : matches
+              ? "The pull request head is the commit this chat's checkout is on."
+              : "The pull request head is not the commit this chat's checkout is on, so it may not hold this work.",
       }
     }),
   )
@@ -221,22 +259,22 @@ function checkEvidence(
   const runs = deps.checkRuns(chatId)
   if (runs.length === 0) return { status: 'not_measured', items: [] }
   const items = runs.map((run): BridgeCheckEvidence => {
-    const sourceMoved = run.treeAfter !== null && run.treeAfter !== run.treeBefore
-    const current = facts !== null && facts.tree === run.treeBefore && !sourceMoved
+    const { status, sourceMoved, current } = projectBridgeCheckRun(run, facts?.tree ?? null)
     const notes: string[] = []
-    let status: BridgeEvidenceStatus
     if (run.state === 'unavailable') {
-      status = 'unavailable'
       notes.push('The check could not be run to a result.')
     } else if (run.state !== 'finished') {
-      status = 'not_measured'
-      notes.push('A new turn or a source change ended this run before it had a result.')
+      notes.push('A new turn, a stop or a source change ended this run before it had a result.')
     } else {
-      status = current && !run.definitionChanged ? 'measured' : 'stale'
       if (sourceMoved) notes.push('The source changed while the check ran, so it did not test one tree.')
+      else if (facts === null) notes.push('The checkout could not be read, so this run is not about the code now.')
       else if (!current) notes.push('The source has changed since this run, so it did not test the current tree.')
-      if (run.definitionChanged)
-        notes.push('The chat changed a file this check definition names, so it is not the configured check.')
+      else notes.push('The check ran to a result on this exact source.')
+      notes.push(
+        run.definitionChanged
+          ? 'The chat wrote a file that decides what this check runs, so it is not the configured check.'
+          : 'No file the chat wrote decides what this check runs, which is not proof the check is unchanged.',
+      )
       if (run.dirty) notes.push('The check ran on an uncommitted working tree, named by its snapshot.')
     }
     return {
@@ -258,7 +296,7 @@ function checkEvidence(
       tree_after: run.treeAfter,
       dirty: run.dirty,
       definition_changed: run.definitionChanged,
-      note: notes.join(' ') || 'The check ran to a result on this exact source.',
+      note: notes.join(' '),
     }
   })
   return { status: rollUpBridgeEvidence(items.map((i) => i.status)), items }

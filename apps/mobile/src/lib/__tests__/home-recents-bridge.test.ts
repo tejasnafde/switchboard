@@ -57,7 +57,7 @@ describe('bridge origin on Home > Recents', () => {
     expect(rows.map((r) => bridgeChecksLabel(r.bridgeOrigin!.checks!))).toEqual([
       '2 checks passed',
       '1 check failed',
-      'Checks measured on older code',
+      'Checks not measured on this code',
       'Checks not measured',
       'Checks could not run',
     ])
