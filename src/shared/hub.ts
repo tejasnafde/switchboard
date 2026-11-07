@@ -751,6 +751,16 @@ export const EMPTY_HUB_VIEW: HubChatView = { self: null, parent: null, children:
 /** The optional `hub` field of a session list row (flag on only): on an open child, or on a parent with open children. */
 export type SessionHubField = { parentId: string } | { openChildren: number }
 
+/**
+ * True for an open child chat. A flat list of chats reaches a child through
+ * its parent, not on its own row: the sidebar Recents and the new-chat
+ * screen's "Pick up where you left off" both leave one out. The nested
+ * sidebar puts it back under its parent (`nestHubChildren`).
+ */
+export function isHubChild(session: { hub?: SessionHubField }): boolean {
+  return Boolean(session.hub && 'parentId' in session.hub)
+}
+
 /** Session list rows with their `hub` field, from every open child as `{ childId, parentId }`. Pure. */
 export function withHubFields<T extends { id: string; hub?: SessionHubField }>(
   sessions: readonly T[],

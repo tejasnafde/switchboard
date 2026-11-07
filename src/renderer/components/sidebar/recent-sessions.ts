@@ -2,6 +2,7 @@ import type { AgentStatus, ChatMessage, Project, SessionSummary } from '@shared/
 import type { PendingBlockingEvent } from '@shared/pending-requests'
 import { sessionPreviewLine } from '@shared/turn-preview'
 import { isWoke, wokeLine } from '@shared/chat-snooze'
+import { isHubChild } from '@shared/hub'
 
 export interface RecentLiveSession {
   id: string
@@ -142,7 +143,7 @@ export function deriveRecentSessions(_input: {
       projects.flatMap((project) =>
         project.sessions.map((session) => {
           // An open child is reached through its parent.
-          if (session.hub && 'parentId' in session.hub) return null
+          if (isHubChild(session)) return null
           const key = `${machineId}\0${session.id}`
           if (seen.has(key)) return null
           seen.add(key)

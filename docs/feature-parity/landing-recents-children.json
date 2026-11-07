@@ -1,0 +1,51 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "landing-recents-children",
+  "summary": "The new-chat screen's \"Pick up where you left off\" list leaves out an open hub child chat, as the desktop sidebar Recents already did. A child is started by its parent and is reached through it, so it takes no row of its own in a flat list. Both lists now read the same rule from src/shared/hub.ts (isHubChild), rather than each holding its own copy of the check.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/hub.ts",
+        "src/renderer/services/chat-landing.ts",
+        "src/renderer/components/sidebar/recent-sessions.ts",
+        "tests/unit/chat-landing.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "iOS 0.4.3",
+      "evidence": ["apps/mobile/src/stores/recents.ts", "apps/mobile/src/components/HomeRecents.tsx"]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "hub_children",
+      "followUpRelease": "Native Android 0.5.26"
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No contract change. The backend keeps sending every chat with its `hub` field, as it already did for the sidebar; which rows a flat list draws is the client's choice. No channel, wire field or capability is added."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Presentation only. The `hub` field of a list row is derived at read time from the open children the backend knows about; no table, column or stored format is read or written differently."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No packaging, channel or compatibility change. An older backend that sends no `hub` field lists exactly what it did before."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck passed for the main and renderer projects.",
+      "npx vitest run --maxWorkers=2 passed. tests/unit/chat-landing.test.ts gains a case with a parent and two children in one project, where only the parent takes a row. The case was checked against the code with the filter removed, and it fails there."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The phones were not changed. Both Home recents lists draw a child chat as its own row when `hub_children` is on, which is off by default on both; the named follow-up releases carry the same rule to them.",
+      "No screenshot baseline covers this list with a child chat: the visual fixture seeds hub children in a launch of its own, which opens on a chat and never on the new-chat screen."
+    ]
+  }
+}
