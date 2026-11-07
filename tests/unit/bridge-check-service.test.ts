@@ -3,10 +3,10 @@
  * producer of a measured check fact.
  *
  * It runs a configured check ONCE per chat, definition and source snapshot,
- * waits for the checkout to stop changing, cancels on a new turn, records
- * the real exit code or signal, digests only MASKED output, and flags a
- * definition the chat itself changed. An unconfigured project runs nothing,
- * and a read never starts a run.
+ * waits for the checkout to stop changing, cancels on a new turn or on a stop
+ * of the chat, records the real exit code or signal, digests only MASKED
+ * output, and flags a definition the chat itself changed. An unconfigured
+ * project runs nothing, and a read never starts a run.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type Database from 'better-sqlite3'
@@ -22,6 +22,7 @@ import {
   saveBridgeProjectPolicy,
   bridgeCheckSummaries,
   getBridgeOrigin,
+  setBridgeOriginStopState,
   writeBridgeStopRecord,
 } from '../../src/main/db/database'
 import { secretRedactor } from '../../src/main/secrets/secret-redactor'
@@ -375,6 +376,42 @@ describe('a stop of all bridge work', () => {
         writeBridgeStopRecord({ generation: 1, killed: true, killPending: true })
         checks.cancelAll()
         return { code: 0, signal: 'SIGKILL', output: '', bytes: 0, failedToStart: false, timedOut: false }
+      },
+    })
+    await checks.onTurnEnded(CHAT)
+    expect(listBridgeCheckRuns(CHAT)[0].state).toBe('cancelled')
+    expect(summary()).toEqual({ status: 'not_measured', passed: 0, failed: 0 })
+  })
+})
+
+describe('a stop of one chat', () => {
+  it("schedules nothing for the turn the chat's own stop ended", async () => {
+    origin()
+    // What stop_chat records before it runs the Stop.
+    setBridgeOriginStopState([CHAT], 'pending')
+    await service().onTurnEnded(CHAT)
+    expect(runs).toEqual([])
+    expect(listBridgeCheckRuns(CHAT)).toEqual([])
+  })
+
+  it('schedules again once the next bridge call clears the stop', async () => {
+    origin()
+    setBridgeOriginStopState([CHAT], 'stopped')
+    await service().onTurnEnded(CHAT)
+    expect(runs).toEqual([])
+    origin()
+    await service().onTurnEnded(CHAT)
+    expect(runs).toEqual([{ definition: TESTS, cwd: ROOT }])
+  })
+
+  it('kills a run in flight for that chat and records it as cancelled, never as the pass it did not see', async () => {
+    origin()
+    const checks: BridgeCheckService = service({
+      run: async (input) => {
+        runs.push({ definition: input.definition, cwd: input.cwd })
+        expect(checks.cancel(CHAT)).toBe(true)
+        // The child exited 0 after the kill landed; the row still reports no result.
+        return { code: 0, signal: null, output: 'ok\n', bytes: 3, failedToStart: false, timedOut: false }
       },
     })
     await checks.onTurnEnded(CHAT)

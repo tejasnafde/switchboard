@@ -53,6 +53,7 @@ function run(over: Partial<BridgeCheckRun> = {}): BridgeCheckRun {
     logDigest: 'd'.repeat(64),
     logBytes: 120,
     definitionChanged: false,
+    definitionChangedReason: null,
     startedAt: 1_000,
     endedAt: 2_000,
     ...over,
@@ -242,9 +243,23 @@ describe('measured check evidence', () => {
   })
 
   it('flags a check definition the chat changed and never calls it measured', async () => {
-    const evidence = await buildBridgeEvidence('chat-1', deps({ checkRuns: () => [run({ definitionChanged: true })] }))
+    const evidence = await buildBridgeEvidence(
+      'chat-1',
+      deps({ checkRuns: () => [run({ definitionChanged: true, definitionChangedReason: 'chat_edit' })] }),
+    )
     expect(evidence.checks.items[0]).toMatchObject({ status: 'stale', definition_changed: true })
-    expect(evidence.checks.items[0].note).toContain('not the configured check')
+    expect(evidence.checks.items[0].note).toContain('The chat wrote a file that decides what this check runs')
+  })
+
+  it('says the check list was replaced when that, and not the chat, changed the definition', async () => {
+    const evidence = await buildBridgeEvidence(
+      'chat-1',
+      deps({ checkRuns: () => [run({ definitionChanged: true, definitionChangedReason: 'checks_replaced' })] }),
+    )
+    expect(evidence.checks.items[0]).toMatchObject({ status: 'stale', definition_changed: true })
+    const { note } = evidence.checks.items[0]
+    expect(note).toContain("The project's configured checks were replaced after this run")
+    expect(note).not.toContain('The chat wrote a file')
   })
 
   it('names the snapshot of a dirty run and binds it to no commit', async () => {

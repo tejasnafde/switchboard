@@ -554,6 +554,9 @@ export class BridgeDeliveryService {
     this.active.add(callId)
     try {
       updateBridgeCallState(callId, 'dispatching')
+      // Recorded before the Stop runs, as a stop of every group does: the
+      // check service schedules nothing more for the turn this stop ends.
+      setBridgeOriginStopState([chatId], 'pending')
       let status: 'stopped'
       try {
         status = await this.halt(chatId)
@@ -881,14 +884,19 @@ export class BridgeDeliveryService {
   }
 
   /**
-   * The chat's own stop: its queued bridge messages are taken back (the
-   * owner's own queued messages stay, held as after any Stop), then the
-   * user's Stop runs until the chat has no turn left. An adapter ignores a
+   * The chat's own stop: the configured check this desktop is running for it
+   * is killed and recorded as cancelled, its queued bridge messages are taken
+   * back (the owner's own queued messages stay, held as after any Stop), then
+   * the user's Stop runs until the chat has no turn left. An adapter ignores a
    * Stop that comes before its provider took the turn, so the Stop is sent
    * again until the turn ends; a turn still running at the deadline throws,
    * and the caller answers `stop_unconfirmed`.
    */
   private async halt(chatId: string): Promise<'stopped'> {
+    // A program this desktop started for the chat is bridge work too: it is
+    // killed here, so it can never finish as a pass the stop did not reach.
+    if (bridgeCheckService()?.cancel(chatId) === false)
+      throw new Error('a running check could not be recorded as cancelled')
     const deadline = this.now() + this.timing.stopConfirmMs
     for (;;) {
       // Every round: a bridge message can be queued while the stop runs.

@@ -250,6 +250,21 @@ async function prEvidence(
   return { status: rollUpBridgeEvidence(items.map((i) => i.status)), items }
 }
 
+/**
+ * Why a run is or is not still the configured check. The two ways it stops
+ * being one read differently: the chat wrote a file that decides what it
+ * runs, or the owner replaced the project's check list after the run, which
+ * the chat had no part in. A run flagged before the reason was recorded
+ * reads as the first, which is how it has always read.
+ */
+function bridgeCheckDefinitionNote(run: Pick<BridgeCheckRun, 'definitionChanged' | 'definitionChangedReason'>): string {
+  if (!run.definitionChanged)
+    return 'No file the chat wrote decides what this check runs, which is not proof the check is unchanged.'
+  return run.definitionChangedReason === 'checks_replaced'
+    ? "The project's configured checks were replaced after this run, so it is not the configured check."
+    : 'The chat wrote a file that decides what this check runs, so it is not the configured check.'
+}
+
 function checkEvidence(
   chatId: string,
   facts: BridgeGitFacts | null,
@@ -270,11 +285,7 @@ function checkEvidence(
       else if (facts === null) notes.push('The checkout could not be read, so this run is not about the code now.')
       else if (!current) notes.push('The source has changed since this run, so it did not test the current tree.')
       else notes.push('The check ran to a result on this exact source.')
-      notes.push(
-        run.definitionChanged
-          ? 'The chat wrote a file that decides what this check runs, so it is not the configured check.'
-          : 'No file the chat wrote decides what this check runs, which is not proof the check is unchanged.',
-      )
+      notes.push(bridgeCheckDefinitionNote(run))
       if (run.dirty) notes.push('The check ran on an uncommitted working tree, named by its snapshot.')
     }
     return {

@@ -11,8 +11,9 @@
  * and a source change during a run is recorded (the result then reads as
  * stale, never as a measurement of the current tree). Nothing is scheduled
  * or spawned while a stop of bridge work stands, and a stop kills a run in
- * flight and records it as cancelled (`cancelAll`, called by the stop
- * service): a program this desktop starts on its own is bridge work.
+ * flight and records it as cancelled (`cancel` for one chat, called by
+ * `stop_chat`, and `cancelAll` for every chat, called by the stop service):
+ * a program this desktop starts on its own is bridge work.
  *
  * The service records only what it observed: the definition hash, where it
  * ran, the trees before and after, the real exit code or signal, and a
@@ -255,17 +256,23 @@ export class BridgeCheckService {
     if (event.type === 'turn.completed') void this.onTurnEnded(event.threadId)
   }
 
-  /** Stops anything in flight for a chat and marks its running rows cancelled. */
-  cancel(chatId: string): void {
+  /**
+   * Stops anything in flight for a chat and marks its running rows cancelled.
+   * False when a row could not be recorded as cancelled: a stop that reads
+   * this must not answer stopped, since the run is no longer accounted for.
+   */
+  cancel(chatId: string): boolean {
     const root = this.root(chatId)
     const controller = this.inFlight.get(root)
-    if (!controller) return
+    if (!controller) return true
     this.inFlight.delete(root)
     controller.abort()
     try {
       cancelRunningBridgeCheckRuns(root)
+      return true
     } catch (err) {
       log.warn('could not cancel the running check rows', { err: String(err) })
+      return false
     }
   }
 
@@ -433,17 +440,19 @@ export class BridgeCheckService {
   }
 
   /**
-   * No check is scheduled or spawned while a kill stands, or after a stop of
-   * all bridge work that came since this chat's last bridge call: the owner
-   * stopped the work, and a program this desktop starts on its own is part
-   * of it.
+   * No check is scheduled or spawned while a kill stands, while a stop of
+   * this chat stands (its origin keeps the stop's state until the next
+   * bridge call), or after a stop of all bridge work that came since this
+   * chat's last bridge call: the owner stopped the work, and a program this
+   * desktop starts on its own is part of it.
    */
   private stopped(root: string): boolean {
     try {
       const stop = readBridgeStopRecord()
       if (stop.killed) return true
       const origin = getBridgeOrigin(root)
-      return origin !== null && origin.stopGeneration < stop.generation
+      if (origin === null) return false
+      return origin.stopState !== null || origin.stopGeneration < stop.generation
     } catch (err) {
       // A stop that cannot be read is treated as standing: a check is never the safe default.
       log.warn('could not read the bridge stop record for a check', { err: String(err) })

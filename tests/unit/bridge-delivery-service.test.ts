@@ -5,8 +5,9 @@
  * model choices, an agent the project stops allowing mid-call, queue and
  * steer fallback (compaction, an ACP agent),
  * dormant and rotated chats, archived and child chats, the one active
- * bridge group, stop during a start, and a crash after the provider took the
- * turn (the retry finds the same message id and sends nothing).
+ * bridge group, stop during a start, a stop that kills the chat's measured
+ * check, and a crash after the provider took the turn (the retry finds the
+ * same message id and sends nothing).
  */
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -31,6 +32,7 @@ vi.mock('../../src/main/conversations/history', async () => {
 import {
   addProject,
   archiveConversation,
+  bridgeCheckOutcome,
   createConversation,
   getBridgeCall,
   getBridgeOrigin,
@@ -42,7 +44,9 @@ import {
   getConversationRuntimeMode,
   getDb,
   getMessagesForConversation,
+  listBridgeCheckRuns,
   listBridgeProjectPolicies,
+  projectBridgeCheckRun,
   recordThreadSession,
   resolveRootThreadId,
   saveBridgeProjectPolicy,
@@ -50,13 +54,18 @@ import {
   setConversationWorktree,
 } from '../../src/main/db/database'
 import { setBridgeProjectAllowed } from '../../src/main/bridge/allowlist'
-import { BridgeCheckService, setBridgeCheckService } from '../../src/main/bridge/check-service'
+import {
+  BridgeCheckService,
+  setBridgeCheckService,
+  type BridgeCheckProcessResult,
+} from '../../src/main/bridge/check-service'
 import { BridgeReadService } from '../../src/main/bridge/read-service'
 import { BridgeDeliveryService, type BridgeCaller } from '../../src/main/bridge/delivery-service'
 import { FakeHost } from './helpers/bridge-delivery-host'
 import { buildBridgeTools } from '../../src/main/mcp/bridge-tools'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
 import { SESSION_START_STOPPED, type RuntimeMode } from '../../src/shared/provider-events'
+import type { StoredBridgeProjectPolicy } from '../../src/shared/bridge'
 
 const MACHINE = 'hub-test-machine'
 const ROOT = mkdtempSync(join(tmpdir(), 'sb-bridge-delivery-'))
@@ -101,8 +110,39 @@ function idleChat(id: string, provider = 'claude', mode: RuntimeMode = 'auto') {
   host.live.set(id, { provider, midTurn: false, steerBlocked: false })
 }
 
+/** The allowed project with one configured check, as the local check service reads it. */
+function checkedPolicy(): StoredBridgeProjectPolicy {
+  const [policy] = listBridgeProjectPolicies()
+  return saveBridgeProjectPolicy({ ...policy, checks: [{ name: 'tests', program: 'npm', args: ['test'] }] })
+}
+
+const exited0 = (): BridgeCheckProcessResult => ({
+  code: 0,
+  signal: null,
+  output: 'ok\n',
+  bytes: 3,
+  failedToStart: false,
+  timedOut: false,
+})
+
+/** The real check service on the test database, with the child process as a seam. */
+function checkService(
+  policy: StoredBridgeProjectPolicy,
+  run: (signal: AbortSignal) => Promise<BridgeCheckProcessResult>,
+): BridgeCheckService {
+  return new BridgeCheckService({
+    enabled: () => true,
+    allowed: () => [{ policy, paths: [ALLOWED], sidebarPath: ALLOWED }],
+    now: () => 9_000,
+    settleMs: 0,
+    facts: async () => ({ head: 'c'.repeat(40), branch: 'main', tree: 'tree-1', dirty: false }),
+    run: (input) => run(input.signal),
+  })
+}
+
 beforeEach(() => {
   createMigratedDb()
+  setBridgeCheckService(null)
   host = new FakeHost(MACHINE)
   reads = new BridgeReadService({
     machineId: () => MACHINE,
@@ -636,6 +676,69 @@ describe('stop_chat', () => {
     host.cancelQueuedTurn = async () => ({ ok: false as const, reason: 'unsupported' as const, message: 'no' })
     host.queued.set('c1', [{ threadId: 'c1', messageId: 'remote_bridge-stuck', text: 'x', queuedAt: 1 }])
     expect(err(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).code).toBe('stop_unconfirmed')
+  })
+
+  it("kills the chat's running check, records it cancelled, and never lets it report a pass", async () => {
+    idleChat('c1')
+    const policy = checkedPolicy()
+    recordBridgeOrigin({
+      conversationId: 'c1',
+      callId: 'bcall_1',
+      projectId: policy.project_id,
+      machineId: MACHINE,
+      policyRevision: policy.revision,
+      source: 'relay',
+    })
+    let childStarted = () => {}
+    const started = new Promise<void>((done) => {
+      childStarted = done
+    })
+    const checks = checkService(policy, (signal) => {
+      childStarted()
+      // A long check: the child ends only when the stop kills it, and it would
+      // have exited 0 either way.
+      return new Promise((done) => signal.addEventListener('abort', () => done(exited0()), { once: true }))
+    })
+    setBridgeCheckService(checks)
+    const scheduled = checks.onTurnEnded('c1')
+    await started
+    expect(listBridgeCheckRuns('c1')[0].state).toBe('running')
+
+    expect(ok(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).status).toBe('stopped')
+    await scheduled
+    const [recorded] = listBridgeCheckRuns('c1')
+    expect(recorded).toMatchObject({ state: 'cancelled', exitCode: null })
+    // The one rule every surface reads a run by: no measurement, and no pass.
+    expect(bridgeCheckOutcome(recorded)).toBe('not_run')
+    expect(projectBridgeCheckRun(recorded, recorded.treeBefore).status).toBe('not_measured')
+  })
+
+  it('leaves a chat with no running check exactly as it was, and records no run', async () => {
+    idleChat('c1')
+    host.busyChats.add('c1')
+    const policy = checkedPolicy()
+    setBridgeCheckService(checkService(policy, () => Promise.resolve(exited0())))
+    expect(ok(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).status).toBe('stopped')
+    expect(host.interrupts).toEqual(['c1'])
+    expect(listBridgeCheckRuns('c1')).toEqual([])
+  })
+
+  it('is stop_unconfirmed when a running check cannot be recorded as cancelled', async () => {
+    idleChat('c1')
+    const policy = checkedPolicy()
+    recordBridgeOrigin({
+      conversationId: 'c1',
+      callId: 'bcall_2',
+      projectId: policy.project_id,
+      machineId: MACHINE,
+      policyRevision: policy.revision,
+      source: 'relay',
+    })
+    // The child was killed but its row could not be written, so the run is no
+    // longer accounted for: the answer must not claim the chat was stopped.
+    setBridgeCheckService({ cancel: () => false } as unknown as BridgeCheckService)
+    expect(err(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).code).toBe('stop_unconfirmed')
+    expect(getBridgeOrigin('c1')?.stopState).toBe('unconfirmed')
   })
 
   it('a stop that throws is stop_unconfirmed, never stopped', async () => {

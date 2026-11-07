@@ -352,14 +352,24 @@ describe('measured check runs', () => {
     expect(cancelInterruptedBridgeCheckRuns(5_000)).toBe(1)
   })
 
-  it('flags every run of a definition the owner no longer configures', () => {
+  it('flags every run of a definition the owner no longer configures, and says the list was replaced', () => {
     const kept = claim()!
     const dropped = claim({ definitionHash: 'hash-old', name: 'lint' })!
     expect(flagBridgeCheckDefinitionsChanged('p1', ['hash-1'])).toBe(1)
     const byName = new Map(listBridgeCheckRuns('c1').map((r) => [r.name, r]))
-    expect(byName.get('tests')!.definitionChanged).toBe(false)
-    expect(byName.get('lint')!.definitionChanged).toBe(true)
+    expect(byName.get('tests')!).toMatchObject({ definitionChanged: false, definitionChangedReason: null })
+    expect(byName.get('lint')!).toMatchObject({
+      definitionChanged: true,
+      definitionChangedReason: 'checks_replaced',
+    })
     expect([kept.runId, dropped.runId]).toHaveLength(2)
+  })
+
+  it('keeps the chat as the reason when the list is replaced after the chat wrote the definition', () => {
+    claim({ definitionHash: 'hash-old', name: 'lint', definitionChanged: true })
+    expect(listBridgeCheckRuns('c1')[0].definitionChangedReason).toBe('chat_edit')
+    expect(flagBridgeCheckDefinitionsChanged('p1', ['hash-1'])).toBe(1)
+    expect(listBridgeCheckRuns('c1')[0].definitionChangedReason).toBe('chat_edit')
   })
 
   it('lists the newest run per name for a project', () => {

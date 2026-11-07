@@ -123,6 +123,11 @@ export function ensureBridgeSchema(db: Database.Database): void {
   if (!originColumns.has('baseline_tree')) db.exec('ALTER TABLE bridge_origins ADD COLUMN baseline_tree TEXT')
   if (!originColumns.has('baseline_commit')) db.exec('ALTER TABLE bridge_origins ADD COLUMN baseline_commit TEXT')
   if (!originColumns.has('baseline_at')) db.exec('ALTER TABLE bridge_origins ADD COLUMN baseline_at INTEGER')
+  const checkRunColumns = columnsOf(db, 'bridge_check_runs')
+  // Why the definition no longer reads as the configured one: the chat wrote a
+  // file that decides what it runs, or the project's checks were replaced.
+  if (!checkRunColumns.has('definition_changed_reason'))
+    db.exec('ALTER TABLE bridge_check_runs ADD COLUMN definition_changed_reason TEXT')
   const stopColumns = columnsOf(db, 'bridge_stop_generation')
   if (!stopColumns.has('killed'))
     db.exec('ALTER TABLE bridge_stop_generation ADD COLUMN killed INTEGER NOT NULL DEFAULT 0')
@@ -653,9 +658,18 @@ export function bridgeAutoResumeBlocked(conversationId: string): boolean {
 // trees before and after, the real exit code or signal and a digest of the
 // masked output. No log text and no agent claim is stored here.
 
-/** `running`: started, no result yet. `cancelled`: a new turn or a source change ended it before a result. */
+/** `running`: started, no result yet. `cancelled`: a new turn, a stop or a source change ended it before a result. */
 export const BRIDGE_CHECK_RUN_STATES = ['running', 'finished', 'cancelled', 'unavailable'] as const
 export type BridgeCheckRunState = (typeof BRIDGE_CHECK_RUN_STATES)[number]
+
+/**
+ * What made a run stop reading as the configured check. `chat_edit`: the turn
+ * wrote a file the definition names, or one that decides what a runner does.
+ * `checks_replaced`: the owner changed the project's check list afterwards,
+ * and the chat wrote nothing.
+ */
+export const BRIDGE_CHECK_DEFINITION_CHANGES = ['chat_edit', 'checks_replaced'] as const
+export type BridgeCheckDefinitionChange = (typeof BRIDGE_CHECK_DEFINITION_CHANGES)[number]
 
 export interface BridgeCheckRun {
   runId: string
@@ -677,6 +691,8 @@ export interface BridgeCheckRun {
   logDigest: string | null
   logBytes: number | null
   definitionChanged: boolean
+  /** Null on a run that is still the configured check, and on one recorded before the reason was kept. */
+  definitionChangedReason: BridgeCheckDefinitionChange | null
   startedAt: number
   endedAt: number | null
 }
@@ -699,6 +715,7 @@ type CheckRunRow = {
   log_digest: string | null
   log_bytes: number | null
   definition_changed: number
+  definition_changed_reason: BridgeCheckDefinitionChange | null
   started_at: number
   ended_at: number | null
 }
@@ -721,6 +738,7 @@ const toCheckRun = (r: CheckRunRow): BridgeCheckRun => ({
   logDigest: r.log_digest,
   logBytes: r.log_bytes,
   definitionChanged: r.definition_changed === 1,
+  definitionChangedReason: r.definition_changed_reason,
   startedAt: r.started_at,
   endedAt: r.ended_at,
 })
@@ -788,8 +806,9 @@ export function claimBridgeCheckRun(input: {
   const changes = db
     .prepare(
       `INSERT OR IGNORE INTO bridge_check_runs (run_id, conversation_id, project_id, name, definition_hash, cwd,
-         execution_root_revision, commit_sha, tree_before, dirty, state, definition_changed, started_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)`,
+         execution_root_revision, commit_sha, tree_before, dirty, state, definition_changed,
+         definition_changed_reason, started_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
     )
     .run(
       runId,
@@ -803,6 +822,8 @@ export function claimBridgeCheckRun(input: {
       input.treeBefore,
       input.dirty ? 1 : 0,
       input.definitionChanged ? 1 : 0,
+      // Only the scheduler sets the flag here, and only for what the chat wrote.
+      input.definitionChanged ? 'chat_edit' : null,
       input.now ?? Date.now(),
     ).changes
   return changes > 0 ? getBridgeCheckRun(runId) : null
@@ -865,14 +886,20 @@ export function cancelInterruptedBridgeCheckRuns(now = Date.now()): number {
 
 /**
  * The owner changed a project's checks: every recorded run there is flagged,
- * so a passing result never reads as the configured release check again.
+ * so a passing result never reads as the configured release check again. A
+ * run already flagged for what the chat wrote keeps that reason: the file is
+ * still written.
  */
 export function flagBridgeCheckDefinitionsChanged(projectId: string, keepHashes: readonly string[]): number {
   const db = getDb()
   const placeholders = keepHashes.map(() => '?').join(', ')
   const where = keepHashes.length > 0 ? ` AND definition_hash NOT IN (${placeholders})` : ''
   return db
-    .prepare(`UPDATE bridge_check_runs SET definition_changed = 1 WHERE project_id = ?${where}`)
+    .prepare(
+      `UPDATE bridge_check_runs SET definition_changed = 1,
+         definition_changed_reason = COALESCE(definition_changed_reason, 'checks_replaced')
+       WHERE project_id = ?${where}`,
+    )
     .run(projectId, ...keepHashes).changes
 }
 
