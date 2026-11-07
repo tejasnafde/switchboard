@@ -349,7 +349,6 @@ export interface ConversationRow {
   runtime_mode?: RuntimeMode | null
   model?: string | null
   reasoning_effort?: string | null
-  launch_config_name?: string | null
   pending_handoff_from?: string | null
   fork_anchor_digest?: string | null
   fork_anchor_role?: string | null

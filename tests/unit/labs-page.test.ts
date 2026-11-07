@@ -11,7 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { LabsFlagState } from '../../src/shared/labs'
+import type { BridgeDeviceStatus } from '../../src/shared/bridge'
 import { LabsPage } from '../../src/renderer/components/settings/LabsPage'
+import { bridgeSetupSteps } from '../../src/renderer/components/settings/bridge-setup-model'
 import { useSettingValues } from '../../src/renderer/components/settings/setting-values'
 import { searchSettingRows } from '../../src/renderer/components/settings/settings-rows'
 import { ConfirmHost } from '../../src/renderer/components/ui/confirm'
@@ -173,6 +175,7 @@ describe('Labs page', () => {
     setBridgeChecks.mockResolvedValue({ enabled: true, projects: [project] })
     await mount()
     const panel = container.querySelector('[data-testid="bridge-checks"]')!
+    expect(panel.textContent).toContain('How a check is measured')
     expect(panel.textContent).toContain('npm test')
     expect(panel.textContent).toContain('Failed (exit 1)')
 
@@ -210,6 +213,69 @@ describe('Labs page', () => {
     await act(async () => box.click())
     expect(removeBridgeProject).toHaveBeenCalledWith('bproj_2')
     expect(setProjectAllowed).not.toHaveBeenCalled()
+  })
+
+  it('searches the projects, counts them and allows every one shown', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    const projects = [
+      { path: '/repo/alpha', name: 'alpha', projectId: 'bproj_1', allowed: false, orphan: false },
+      { path: '/repo/beta', name: 'beta', projectId: 'bproj_2', allowed: false, orphan: false },
+      { path: '/work/gamma', name: 'gamma', projectId: 'bproj_3', allowed: true, orphan: false },
+    ]
+    bridgeProjects.mockResolvedValue({ enabled: true, projects })
+    setProjectAllowed.mockImplementation(async (path: string) => ({
+      enabled: true,
+      projects: projects.map((p) => (p.path === path ? { ...p, allowed: true } : p)),
+    }))
+    await mount()
+    const panel = () => container.querySelector('[data-testid="bridge-projects"]')!
+    const names = () =>
+      [...panel().querySelectorAll('[data-testid="bridge-projects-list"] label')].map((l) => l.textContent)
+    // The allowed project sorts first, and the count names the whole list.
+    expect(names()![0]).toContain('gamma')
+    expect(panel().querySelector('[data-testid="bridge-projects-count"]')!.textContent).toBe('1 of 3 allowed')
+
+    const search = panel().querySelector<HTMLInputElement>('input[aria-label="Search projects"]')!
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    await act(async () => {
+      setter.call(search, '/repo')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(names()).toHaveLength(2)
+    expect(panel().querySelector('[data-testid="bridge-projects-count"]')!.textContent).toBe('1 of 3 allowed · 2 shown')
+
+    const allShown = panel().querySelector<HTMLButtonElement>('#bridge-allow-shown')!
+    await act(async () => allShown.click())
+    await act(async () => {})
+    // Only the two the search shows, and gamma is left as it is.
+    expect(setProjectAllowed.mock.calls.map((c) => c[0])).toEqual(['/repo/alpha', '/repo/beta'])
+  })
+
+  it('never reads an unread or unusable device key as not enrolled', () => {
+    const device = DEVICE as unknown as BridgeDeviceStatus
+    expect(bridgeSetupSteps({ total: 0, allowed: 0, device: null })[2]).toMatchObject({
+      state: 'unknown',
+      detail: 'Could not read the enrollment.',
+    })
+    expect(
+      bridgeSetupSteps({ total: 0, allowed: 0, device: { ...device, enrolled: true, state: 'key_unreadable' } })[2]
+        .detail,
+    ).toContain('cannot be used here')
+  })
+
+  it('shows the setup steps with what this Mac can check', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({
+      enabled: true,
+      projects: [{ path: '/repo', name: 'repo', projectId: 'bproj_1', allowed: true, orphan: false }],
+    })
+    deviceStatus.mockResolvedValue(DEVICE)
+    await mount()
+    const steps = [...container.querySelectorAll('[data-testid="bridge-setup"] li')]
+    expect(steps.map((li) => li.getAttribute('data-step-state'))).toEqual(['done', 'done', 'todo', 'unknown'])
+    expect(steps[1].textContent).toContain('1 of 1 allowed')
+    expect(steps[2].textContent).toContain('No device key yet')
+    expect(steps[3].textContent).toContain('Not checked here')
   })
 
   it('enrolls this Mac and shows the machine id, the operator command and the status', async () => {
@@ -268,7 +334,7 @@ describe('Labs page', () => {
     })
     await mount()
     const panel = container.querySelector('[data-testid="bridge-stop"]')!
-    expect(panel.textContent).toContain('also interrupts a turn you started when the bridge steered')
+    expect(panel.textContent).toContain('can interrupt a turn you started when the bridge steered')
     expect(panel.querySelector('[data-testid="bridge-stop-killed"]')!.textContent).toBe('Allowed')
     const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text)!
     await act(async () => button('Stop all bridge work').click())
@@ -338,10 +404,13 @@ describe('Labs page', () => {
     try {
       rows.set('labs.instinct_bridge', 'true')
       bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
-      deviceStatus.mockRejectedValueOnce(new Error('backend gone')).mockResolvedValue(DEVICE)
+      // Every caller of the status fails, not only the first: the setup
+      // checklist reads it too.
+      deviceStatus.mockRejectedValue(new Error('backend gone'))
       await mount()
       const panel = () => container.querySelector('[data-testid="bridge-device"]')!
       expect(panel().querySelector('[role="alert"]')!.textContent).toBe('Could not read the enrollment.')
+      deviceStatus.mockResolvedValue(DEVICE)
       await act(async () => vi.advanceTimersByTimeAsync(2_000))
       expect(panel().querySelector('[role="alert"]')).toBeNull()
     } finally {
@@ -356,7 +425,8 @@ describe('Labs page', () => {
     expect(toggle('labsInfo.phoneLivePages')).toBeNull()
     expect(row('labsInfo.phoneLivePages').textContent).toContain('Set on each phone')
     expect(row('labsInfo.snooze').textContent).toContain('Always on')
-    expect(container.querySelectorAll('details')).toHaveLength(10)
+    // One per labs row, plus the stop panel's Relay details.
+    expect(container.querySelectorAll('details')).toHaveLength(11)
   })
 
   it('saves a switch to its labs row and shows it after a reload', async () => {

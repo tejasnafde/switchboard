@@ -51,7 +51,6 @@ function fixture() {
       runtime_mode TEXT,
       model TEXT,
       provider_instance_id TEXT,
-      launch_config_name TEXT,
       sidebar_role TEXT
     );
     CREATE TABLE messages (

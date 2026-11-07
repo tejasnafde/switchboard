@@ -260,6 +260,31 @@ export function forkBlockedByStatus(status: AgentStatus): boolean {
   return status === 'running' || status === 'thinking'
 }
 
+export const NOT_A_GIT_REPOSITORY = 'Not a git repository'
+
+/** A `git:current-branch` answer, as every surface receives it. */
+export interface BranchReadAnswer {
+  ok: boolean
+  error?: string
+  missing?: boolean
+}
+
+/** How long a fork menu waits for that answer before it offers the choice anyway. */
+export const BRANCH_READ_WAIT_MS = 1500
+
+/**
+ * Whether a surface offers "fork into a new worktree". A folder that is not a
+ * git work tree has no HEAD to branch from, and neither has a folder that is
+ * gone, so the choice is not shown at all. Only an answer that proves one of
+ * those drops it: a read that failed for another reason, or that has not
+ * answered, keeps the choice, and the backend refuses a request it cannot
+ * serve with `NOT_A_GIT_REPOSITORY`. The same rule reads the branch chip.
+ */
+export function offerForkIntoWorktree(read: BranchReadAnswer | null | undefined): boolean {
+  if (!read || read.ok) return true
+  return !(read.missing || /not a git repository/i.test(read.error ?? ''))
+}
+
 export function isForkableForkMessage(message: ChatMessage): boolean {
   if (message.role !== 'user' && message.role !== 'assistant') return false
   if (message.content.trim().length > 0) return true

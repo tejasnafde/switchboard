@@ -52,6 +52,7 @@ fun ThreadSessionScreen(
     viewingLeaseLifecycle: ThreadViewingLeaseLifecycle? = null,
     registerViewingLeaseRenewal: ((() -> Unit) -> Closeable)? = null,
     onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
+    offerWorktreeFork: Boolean = true,
     onOpenHubChat: (HubChatRef) -> Unit = {},
     snoozeLine: @Composable () -> Unit = {},
     details: ThreadDetails? = null,
@@ -116,6 +117,7 @@ fun ThreadSessionScreen(
         onOutboxAction = onOutboxAction,
         forkMetadata = session.forkMetadata,
         onFork = onFork,
+        offerWorktreeFork = offerWorktreeFork,
         prLinks = session.prLinks,
         onUnlinkPrLink = { ref ->
             (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.unlinkPrLink(ref) }

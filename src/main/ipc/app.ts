@@ -647,7 +647,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
         runtimeMode: settings.runtime_mode ?? null,
         model: settings.model ?? null,
         reasoningEffort: settings.reasoning_effort ?? null,
-        launchConfigName: getSessionLayout(row.id)?.launchConfigName ?? row.launch_config_name ?? null,
+        launchConfigName: getSessionLayout(row.id)?.launchConfigName ?? null,
         forkMetadata: getConversationForkMetadata(row.id),
       }
 
