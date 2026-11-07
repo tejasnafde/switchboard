@@ -223,6 +223,21 @@ describe('recent chats on the landing screen', () => {
     const chats = recentLandingChats([shared, twin], { remotes: [], connections: {}, projects: {} })
     expect(chats.map((c) => c.session.id)).toEqual(['/a-0'])
   })
+  it('leaves out a hub child chat, as the sidebar Recents does', () => {
+    // A child is started by its parent and is reached through it, so the
+    // list shows the parent alone (src/shared/hub.ts isHubChild).
+    const parent = project('/a', 10)
+    const withChildren: Project = {
+      ...parent,
+      sessions: [
+        { ...parent.sessions[0], hub: { openChildren: 2 } },
+        { ...parent.sessions[0], id: 'child-1', startedAt: 20, hub: { parentId: '/a-0' } },
+        { ...parent.sessions[0], id: 'child-2', startedAt: 30, hub: { parentId: '/a-0' } },
+      ],
+    }
+    const chats = recentLandingChats([withChildren], { remotes: [], connections: {}, projects: {} })
+    expect(chats.map((c) => c.session.id)).toEqual(['/a-0'])
+  })
   it('is empty with no chats', () => {
     expect(recentLandingChats([project('/a')], { remotes: [], connections: {}, projects: {} })).toEqual([])
   })
