@@ -4,7 +4,7 @@
  * from an offset in order, and neither ever goes over the bytes it was given.
  */
 import { describe, expect, it } from 'vitest'
-import { cutMarker, jsonBytes, previewText, windowText } from '../../src/main/bridge/read-budget'
+import { cutMarker, jsonBytes, previewText, windowText, type TextChunk } from '../../src/main/bridge/read-budget'
 
 const REPORT = Array.from({ length: 4000 }, (_, i) => `line ${i}: what the agent found, in plain words`).join('\n')
 
@@ -37,14 +37,37 @@ describe('previewText', () => {
     expect(cutMarker(7)).toBe('\n[... 7 characters cut ...]\n')
   })
 
-  it('never splits an astral character in half', () => {
+  it('never splits an astral character in half, and its head and pages lose none of them', () => {
     const text = '🙂'.repeat(4000)
-    const chunk = previewText(text, 512)
+    const chunk = previewText(text, 1000)
     expect(chunk.text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
     expect(chunk.text).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/)
-    expect(jsonBytes(chunk.text)).toBeLessThanOrEqual(512)
+    expect(jsonBytes(chunk.text)).toBeLessThanOrEqual(1000)
+    expect(read(text, chunk.nextOffset, 1000)).toBe(text.slice(chunk.nextOffset!))
+    // The head plus everything read on from it is the whole reply.
+    expect(text.slice(0, chunk.nextOffset!) + read(text, chunk.nextOffset, 1000)).toBe(text)
+  })
+
+  it('stays inside a budget too small for its own marker, and still reads on', () => {
+    const chunk = previewText('a'.repeat(500), 8)
+    expect(chunk).toEqual({ text: '', offset: 0, truncated: true, nextOffset: 0 })
+    expect(read('a'.repeat(500), 0, 8)).toBe('a'.repeat(500))
   })
 })
+
+/** Everything from `offset` on, page by page, as a caller reads it. */
+function read(text: string, offset: number | null, maxBytes: number): string {
+  let at = offset
+  let out = ''
+  for (let guard = 0; at !== null && guard < 20_000; guard += 1) {
+    const page: TextChunk = windowText(text, at, maxBytes)
+    out += page.text
+    if (page.nextOffset !== null && page.nextOffset <= at) throw new Error('a page did not move on')
+    at = page.nextOffset
+  }
+  if (at !== null) throw new Error('the pages never ended')
+  return out
+}
 
 describe('windowText', () => {
   it('reads the whole text in order, page by page, and stops', () => {
@@ -66,5 +89,15 @@ describe('windowText', () => {
 
   it('answers an offset past the end with nothing left to read', () => {
     expect(windowText('short', 99, 1024)).toEqual({ text: '', offset: 5, truncated: false, nextOffset: null })
+  })
+
+  it('moves on by at least one character, so a tiny budget still reaches the end', () => {
+    expect(read('one small report', 0, 1)).toBe('one small report')
+    expect(read('🙂🙂🙂', 0, 1)).toBe('🙂🙂🙂')
+  })
+
+  it('reads a whole character when an offset lands inside one', () => {
+    const text = '🙂🙂'
+    expect(windowText(text, 1, 1024)).toMatchObject({ text, offset: 0 })
   })
 })

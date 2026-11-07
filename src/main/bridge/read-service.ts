@@ -57,6 +57,8 @@ const BRIDGE_SNIPPET_MAX_CHARS = 240
 const READ_HISTORY_MESSAGES = 20
 const READ_MESSAGE_MAX_CHARS = 1000
 const PENDING_SUMMARY_MAX_CHARS = 500
+/** A title is stored with no length of its own, and a row is not the place to read a long one. */
+const READ_TITLE_MAX_CHARS = 200
 /** Open questions and approvals one read returns, newest last. */
 const READ_PENDING_MAX = 10
 /**
@@ -387,7 +389,7 @@ export class BridgeReadService {
   ): BridgeChatRow {
     return {
       chat: { machine_id: machineId, chat_id: chat.id },
-      title: maskStoredText(chat.id, chat.title),
+      title: cap(maskStoredText(chat.id, chat.title), READ_TITLE_MAX_CHARS),
       project: { project_id: project.policy.project_id, label: project.policy.label },
       machine_id: machineId,
       last_activity_at: new Date(chat.activity).toISOString(),
@@ -652,7 +654,9 @@ export class BridgeReadService {
       r: project.policy.revision,
       u: project.policy.updated_at,
       k: key,
-      l: newest,
+      // A page of a long reply delivers no history, so it hands back the
+      // place the caller was already at: nothing is skipped by reading one.
+      l: replyOffset === null ? newest : (since?.l ?? null),
     })
     // A page of a long reply is asked for by offset, so it is always answered,
     // even when nothing in the chat moved since the cursor was handed out.
@@ -680,7 +684,7 @@ export class BridgeReadService {
         draft: {
           ...base,
           chat: ref,
-          title,
+          title: cap(title, READ_TITLE_MAX_CHARS),
           project: { project_id: project.policy.project_id, label: project.policy.label },
           archived: row.archived === 1,
           status,
@@ -786,19 +790,20 @@ function fitChatSnapshot({ draft, reply, replyText, replyOffset, rows }: FitInpu
     truncated: true,
     omitted: { ...snapshot.omitted, history: snapshot.omitted.history + rows.length },
   })
+  const roomIn = (snapshot: BridgeChatSnapshot): number =>
+    Math.max(READ_CHAT_BUDGET_BYTES - jsonBytes(shell(snapshot)), 0)
   let header = draft
-  let room = READ_CHAT_BUDGET_BYTES - jsonBytes(shell(header))
+  let room = roomIn(header)
   // Only a pathological chat gets here: the measured facts and the open
   // requests are already capped by count. The reply still has to be readable,
   // so they give way to it rather than crowd it out.
   for (const drop of [dropEvidenceItems, dropPendingItems]) {
     if (room >= READ_REPLY_MIN_BYTES) break
     header = drop(header)
-    room = READ_CHAT_BUDGET_BYTES - jsonBytes(shell(header))
+    room = roomIn(header)
   }
   const replyRoom = Math.max(Math.floor(room * 0.6), Math.min(room, READ_REPLY_MIN_BYTES))
-  const chunk =
-    replyOffset === null ? previewText(replyText, replyRoom) : windowText(replyText, replyOffset, Math.max(room, 0))
+  const chunk = replyOffset === null ? previewText(replyText, replyRoom) : windowText(replyText, replyOffset, room)
 
   let left = room - jsonBytes(chunk.text)
   const kept: BridgeChatSnapshot['history'] = []
@@ -826,14 +831,19 @@ function fitChatSnapshot({ draft, reply, replyText, replyOffset, rows }: FitInpu
   }
   // The arithmetic above holds, but the budget is a promise: never hand back
   // an answer over it because one estimate was a few bytes out. The history
-  // gives way first, then the reply itself.
-  while (jsonBytes(answer) > READ_CHAT_BUDGET_BYTES) {
+  // gives way first, then the reply itself. A pass that does not make the
+  // answer smaller has nothing left to give, so the answer stands as it is:
+  // the loop ends on every input, however little room the chat left it.
+  let size = jsonBytes(answer)
+  while (size > READ_CHAT_BUDGET_BYTES) {
     if (answer.history.length > 0) {
       answer.history = answer.history.slice(1)
       answer.omitted = { ...answer.omitted, history: answer.omitted.history + 1 }
     } else if (answer.agent_reply && answer.agent_reply.text.length > 0) {
-      const over = jsonBytes(answer) - READ_CHAT_BUDGET_BYTES
-      const smaller = Math.max(jsonBytes(answer.agent_reply.text) - over - 16, 0)
+      // A few bytes under what the overflow asks for, so the numbers around
+      // the text (a wider offset, a longer count) cannot eat the cut again.
+      const slack = 16
+      const smaller = Math.max(jsonBytes(answer.agent_reply.text) - (size - READ_CHAT_BUDGET_BYTES) - slack, 0)
       const cut = replyOffset === null ? previewText(replyText, smaller) : windowText(replyText, replyOffset, smaller)
       answer.agent_reply = {
         ...answer.agent_reply,
@@ -844,6 +854,9 @@ function fitChatSnapshot({ draft, reply, replyText, replyOffset, rows }: FitInpu
       }
     } else break
     answer.truncated = true
+    const next = jsonBytes(answer)
+    if (next >= size) break
+    size = next
   }
   return answer
 }

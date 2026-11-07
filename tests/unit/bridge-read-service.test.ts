@@ -592,6 +592,29 @@ describe("read_chat's size budget", () => {
     }
   })
 
+  it('answers a chat whose title alone would fill the budget, and still fits it', async () => {
+    chat('titled', ALLOWED, 'x'.repeat(60_000))
+    insert('tr1', 'titled', 'done', 5_000)
+    const snap = ok(await service.readChat({ chat: 'titled' }))
+    if (!('agent_reply' in snap)) throw new Error('expected a snapshot')
+    expect(jsonBytes(snap)).toBeLessThanOrEqual(READ_CHAT_BUDGET_BYTES)
+    expect(snap.title).toHaveLength(200)
+    expect(snap.agent_reply!.text).toBe('done')
+  })
+
+  it('does not move the delivered-history mark when it answers a page', async () => {
+    const first = ok(await service.readChat({ chat: 'big' }))
+    if (!('agent_reply' in first)) throw new Error('expected a snapshot')
+    const page = ok(await service.readChat({ chat: 'big', since: first.cursor, reply_offset: 200 }))
+    if (!('agent_reply' in page)) throw new Error('expected a snapshot')
+    insert('after', 'big', 'one more word from the agent', 95_000)
+    // The page delivered no history, so the next poll still has the messages.
+    const next = ok(await service.readChat({ chat: 'big', since: page.cursor }))
+    if (!('agent_reply' in next)) throw new Error('expected a snapshot')
+    expect(next.history.map((m) => m.message_id)).toEqual(['after'])
+    expect(next.history_reset).toBe(false)
+  })
+
   it('keeps the newest open requests and counts the rest', async () => {
     live.pending.set(
       'big',

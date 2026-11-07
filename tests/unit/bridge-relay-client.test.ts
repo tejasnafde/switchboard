@@ -289,6 +289,16 @@ describe('BridgeRelayClient', () => {
     expect(h.timers.delays.at(-1)).toBe(2_000)
   })
 
+  it('reads a frame_too_large close as a refusal, whatever numbers its reason names', () => {
+    const h = harness()
+    h.client.start()
+    h.relay({ type: 'challenge', nonce: h.nonce, wire_version: 1 })
+    h.last().on.onClose(4012, 'frame_too_large: 70135 bytes, limit 65536')
+    expect(h.client.status()).toMatchObject({ state: 'rejected', code: 'frame_too_large' })
+    // Retried on the slow curve, so a misconfigured desktop does not hammer the relay.
+    expect(h.timers.delays.at(-1)).toBe(30_000)
+  })
+
   it('a newer connection elsewhere fences this one: replaced, then retried', () => {
     const h = harness()
     h.client.start()

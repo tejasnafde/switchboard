@@ -52,6 +52,7 @@ const REJECTION_CODES = new Set([
   'wrong_origin',
   'replaced',
   'invalid_frame',
+  'frame_too_large',
   'relay_misconfigured',
 ])
 
@@ -494,7 +495,10 @@ export class BridgeRelayClient {
     this.phase = 'await_challenge'
     this.generation = null
     if (!this.running) return
-    const refusal = REJECTION_CODES.has(reason) ? reason : null
+    // A close reason can name numbers after its code, for example
+    // "frame_too_large: 70135 bytes, limit 65536".
+    const closeCode = reason.split(':')[0]
+    const refusal = REJECTION_CODES.has(closeCode) ? closeCode : null
     if (reason === 'revoked') this.deps.onRevoked?.()
     const why = refusal ?? this.lastError ?? `closed_${code}`
     const rejected = refusal !== null || (this.lastError !== null && REJECTION_CODES.has(this.lastError))

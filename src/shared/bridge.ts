@@ -712,6 +712,9 @@ export interface BridgeError {
   model_choices?: string[]
   /** Set on a rejected call: true when the action never reached the machine. */
   non_delivery_confirmed?: boolean
+  /** Set when an answer was too large to send: its size and the limit, in bytes. */
+  bytes?: number
+  limit?: number
 }
 
 export function bridgeError(

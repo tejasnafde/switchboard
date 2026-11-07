@@ -171,7 +171,8 @@ export function buildBridgeTools(deps: BridgeToolDeps): McpTool[] {
         'length (the whole reply in characters), offset, truncated and next_offset. A cut reply shows its head and ' +
         'its tail with a "[... N characters cut ...]" marker between them; read the rest in order by calling ' +
         'read_chat again with reply_offset set to next_offset, until next_offset is null. A reply_offset read ' +
-        'returns that part of the reply and no history.',
+        'returns that part of the reply and no history, and its cursor stays where yours was, so paging ' +
+        'skips no message.',
       inputSchema: {
         type: 'object',
         properties: {
