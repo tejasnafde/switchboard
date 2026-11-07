@@ -35,6 +35,7 @@ import {
   BridgeDeviceLink,
   bridgeCatalog,
   operatorCommand,
+  operatorScriptPath,
   type DeviceLinkDeps,
 } from '../../src/main/bridge/device-link'
 import { defaultDeviceKeyDeps, type DeviceKeyDeps } from '../../src/main/bridge/device-key'
@@ -656,7 +657,7 @@ describe('BridgeDeviceLink', () => {
     createMigratedDb()
   })
 
-  it('runs only while the flag is on and this installation is enrolled', () => {
+  it('runs only while the flag is on and this installation is enrolled', async () => {
     const h = linkHarness()
     h.link.reconcile()
     expect(h.clients).toHaveLength(0)
@@ -666,9 +667,11 @@ describe('BridgeDeviceLink', () => {
     expect(h.clients).toHaveLength(1)
     expect(h.clients[0]).toMatchObject({ started: 1, origin: ORIGIN })
     expect(status).toMatchObject({ enrolled: true, machine_id: MACHINE, label: 'Work Mac', state: 'connecting' })
+    // Absolute here (vitest runs from the checkout), so the command needs no folder.
     expect(status.operator_command).toBe(
-      `echo '${status.public_key}' | node scripts/bridge-operator.mjs enroll '${MACHINE}' 'Work Mac' -`,
+      `echo '${status.public_key}' | node '${operatorScriptPath()}' enroll '${MACHINE}' 'Work Mac' -`,
     )
+    expect(operatorScriptPath()).toMatch(/^\/.+\/scripts\/bridge-operator\.mjs$/)
 
     h.link.reconcile()
     expect(h.clients).toHaveLength(1)
@@ -680,7 +683,10 @@ describe('BridgeDeviceLink', () => {
     h.link.reconcile()
     expect(h.clients).toHaveLength(2)
     h.link.catalogChanged()
-    expect(h.clients[1].catalogs).toBe(1)
+    h.link.catalogChanged()
+    // Coalesced: a bulk allowlist change saves one project at a time.
+    expect(h.clients[1].catalogs).toBe(0)
+    await vi.waitFor(() => expect(h.clients[1].catalogs).toBe(1))
 
     h.link.removeEnrollment()
     expect(h.clients[1].stopped).toBe(1)
@@ -728,10 +734,23 @@ describe('BridgeDeviceLink', () => {
     expect(bad.link.status()).toMatchObject({ state: 'key_unreadable', code: 'bad_relay_origin', relay_origin: null })
 
     expect(
-      operatorCommand({ origin: 'http://127.0.0.1:8787', machineId: 'hub-1', label: "Tejas's Mac", publicKey: 'AAAA' }),
+      operatorCommand({
+        origin: 'http://127.0.0.1:8787',
+        machineId: 'hub-1',
+        label: "Tejas's Mac",
+        publicKey: 'AAAA',
+        scriptPath: 'scripts/bridge-operator.mjs',
+      }),
     ).toBe(
-      `echo 'AAAA' | BRIDGE_RELAY_ORIGIN='http://127.0.0.1:8787' node scripts/bridge-operator.mjs enroll 'hub-1' 'Tejas'\\''s Mac' -`,
+      `echo 'AAAA' | BRIDGE_RELAY_ORIGIN='http://127.0.0.1:8787' node 'scripts/bridge-operator.mjs' enroll 'hub-1' 'Tejas'\\''s Mac' -`,
     )
+  })
+
+  it('falls back to the relative script path for a packaged build and an unknown root', () => {
+    expect(operatorScriptPath('/Applications/Switchboard.app/Contents/Resources/app.asar')).toBe(
+      'scripts/bridge-operator.mjs',
+    )
+    expect(operatorScriptPath('/nowhere/at/all')).toBe('scripts/bridge-operator.mjs')
   })
 })
 

@@ -24,7 +24,7 @@ import {
   writeBridgeStopRecord,
   type BridgeOriginSource,
 } from '../../src/main/db/database'
-import { BRIDGE_CLEAR_KILL_COMMAND, BridgeStopService, type BridgeStopHost } from '../../src/main/bridge/stop-service'
+import { bridgeClearKillCommand, BridgeStopService, type BridgeStopHost } from '../../src/main/bridge/stop-service'
 import { BridgeCheckService, setBridgeCheckService } from '../../src/main/bridge/check-service'
 import { BRIDGE_CALL_RETENTION_MS, BRIDGE_CONTROL_LEASE_MS } from '../../src/shared/bridge'
 
@@ -257,7 +257,7 @@ describe('clearing a kill', () => {
 
   it('on an enrolled desktop follows the relay only, and the page names the operator command', async () => {
     await service.applyControl({ stop_generation: 4, killed: true })
-    expect(service.status().clear_command).toBe(BRIDGE_CLEAR_KILL_COMMAND)
+    expect(service.status().clear_command).toBe(bridgeClearKillCommand())
     expect(() => service.clearLocalKill()).toThrow(/follows the relay/)
     // The operator's clear-kill: same generation, not killed.
     await service.applyControl({ stop_generation: 4, killed: false })

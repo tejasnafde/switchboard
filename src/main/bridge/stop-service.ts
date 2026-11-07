@@ -33,10 +33,14 @@ import {
 } from '../db/database'
 import { createMainLogger } from '../logger'
 import { bridgeCheckService } from './check-service'
+import { operatorScriptPath, shellQuote } from './device-link'
 
 const log = createMainLogger('bridge:stop')
 
-export const BRIDGE_CLEAR_KILL_COMMAND = 'node scripts/bridge-operator.mjs clear-kill'
+/** Absolute while this build runs from a checkout, so the command works from any folder. */
+export function bridgeClearKillCommand(scriptPath: string = operatorScriptPath()): string {
+  return `node ${shellQuote(scriptPath)} clear-kill`
+}
 const LEASE_TICK_MS = 10_000
 const RETIRE_EVERY_MS = 24 * 60 * 60 * 1000
 
@@ -189,7 +193,7 @@ export class BridgeStopService {
   /** Only on a desktop that is not enrolled; an enrolled one follows the relay. */
   clearLocalKill(): BridgeStopStatus {
     if (this.host.relay.enrolled())
-      throw new Error(`This Mac is enrolled, so the kill follows the relay. Run: ${BRIDGE_CLEAR_KILL_COMMAND}`)
+      throw new Error(`This Mac is enrolled, so the kill follows the relay. Run: ${bridgeClearKillCommand()}`)
     const record = readBridgeStopRecord()
     writeBridgeStopRecord({ generation: record.generation, killed: false, killPending: false })
     log.info('bridge kill cleared on this desktop', { generation: record.generation })
@@ -245,7 +249,7 @@ export class BridgeStopService {
       active_chats: this.host.activeGroups().length,
       last_contact_at: last,
       lease_expires_at: last === null ? null : last + this.leaseMs,
-      clear_command: record.killed && enrolled ? BRIDGE_CLEAR_KILL_COMMAND : null,
+      clear_command: record.killed && enrolled ? bridgeClearKillCommand() : null,
     }
   }
 
