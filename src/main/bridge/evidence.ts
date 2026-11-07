@@ -174,20 +174,20 @@ async function codeEvidence(
   // Attribution needs the stronger evidence: the turn's own checkpoint wrote
   // every changed file. An editor's change is in the diff and in no written
   // set, so a chat alone in its checkout proves nothing by itself.
-  const written = deps.writtenSinceBaseline(chatId)
-  const mineSet = written === null ? null : new Set(written)
-  const mine =
-    !shared && changed !== null && changed.length > 0 && mineSet !== null && changed.every((p) => mineSet.has(p))
+  // An unknown written set is an empty one here: it then covers no diff.
+  const wrote = new Set(deps.writtenSinceBaseline(chatId) ?? [])
+  const changedCount = changed?.length ?? null
+  const mine = !shared && changed !== null && changed.length > 0 && changed.every((p) => wrote.has(p))
   const notes: string[] = []
   if (facts.dirty) notes.push('The working tree has changes that are not committed.')
-  if (changed?.length === 0) notes.push('Nothing differs from the baseline recorded for the last bridge call.')
+  if (changedCount === 0) notes.push('Nothing differs from the baseline recorded for the last bridge call.')
   if (base.baseline_tree === null) notes.push('No baseline was recorded, so no diff was measured.')
   if (shared) notes.push('Another chat shares this checkout, so who made a change is unknown.')
-  else if (!mine && changed !== null && changed.length > 0)
+  else if (!mine && changedCount)
     notes.push('A changed file is not in what this chat wrote, so who made it is unknown.')
   return {
     ...base,
-    changed_files: changed?.length ?? null,
+    changed_files: changedCount,
     attribution: mine ? 'bridge_chat' : 'unknown',
     status: 'measured',
     note: notes.join(' ') || 'The checkout matches the commit it is on.',

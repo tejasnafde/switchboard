@@ -58,8 +58,7 @@ const EDITS_MAX_PATHS = 2_000
  * turn that wrote one may have changed what a check runs without touching
  * any path the definition names (`npm run test` and `scripts.test`, say).
  * The flag this raises is one way only: it means the chat touched something
- * that decides what the check runs. No flag is not proof the check is
- * unchanged, which no rule here can decide.
+ * that decides what the check runs.
  */
 const BRIDGE_CHECK_DEFINING_FILES: readonly string[] = [
   'package.json',
