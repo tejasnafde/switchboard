@@ -4,14 +4,17 @@
  * it when either turns off. Settings > Labs reads its status and enrolls or
  * removes the enrollment through the admin-scoped `bridge:*` channels.
  */
+import { existsSync } from 'node:fs'
 import { hostname } from 'node:os'
+import { join } from 'node:path'
 import {
   DEFAULT_BRIDGE_RELAY_ORIGIN,
   instinctBridgeEnabled,
   type BridgeCatalogProject,
+  type BridgeControl,
   type BridgeDeviceStatus,
 } from '@shared/bridge'
-import { appVersion } from '../runtime'
+import { appRootDir, appVersion } from '../runtime'
 import { getSetting, hubInstallId } from '../db/database'
 import { createMainLogger } from '../logger'
 import { allowedBridgeProjects, bridgeProjectAgents } from './read-service'
@@ -26,9 +29,18 @@ import {
   setDeviceLabel,
   type DeviceKeyDeps,
 } from './device-key'
-import { BridgeRelayClient, resolveRelayOrigin, type RelayClientDeps, type RelayClientStatus } from './relay-client'
+import {
+  BridgeRelayClient,
+  resolveRelayOrigin,
+  type RelayClientDeps,
+  type RelayClientStatus,
+  type RelayCommandRunner,
+} from './relay-client'
 
 const log = createMainLogger('bridge:device-link')
+
+/** Saving the allowlist is one project at a time, so catalog sends are coalesced over this window. */
+export const CATALOG_COALESCE_MS = 150
 
 export interface DeviceLinkDeps {
   env: NodeJS.ProcessEnv
@@ -37,7 +49,28 @@ export interface DeviceLinkDeps {
   keys: DeviceKeyDeps
   catalog(machineId: string): BridgeCatalogProject[]
   userAgent: string
-  createClient(deps: RelayClientDeps): Pick<BridgeRelayClient, 'start' | 'stop' | 'sendCatalog' | 'status'>
+  createClient(
+    deps: RelayClientDeps,
+  ): Pick<BridgeRelayClient, 'start' | 'stop' | 'sendCatalog' | 'status' | 'lastContactAt' | 'sendStopAck' | 'sendKill'>
+}
+
+/** The stop service's side of the relay connection. */
+export interface BridgeRelayControlListener {
+  control(control: BridgeControl): void
+  /** The relay closed with `revoked`, or the owner removed this desktop's enrollment. */
+  authorityLost(reason: 'revoked' | 'unenrolled'): void
+}
+
+let controlListener: BridgeRelayControlListener | null = null
+let commandRunner: RelayCommandRunner | null = null
+
+export function onBridgeRelayControl(listener: BridgeRelayControlListener | null): void {
+  controlListener = listener
+}
+
+/** Runs the relay's `command` frames. Until it is set, a command frame is dropped. */
+export function onBridgeRelayCommand(runner: RelayCommandRunner | null): void {
+  commandRunner = runner
 }
 
 /** The allowed projects as the relay sees them: ids, labels, agents and the mode cap. */
@@ -51,19 +84,34 @@ export function bridgeCatalog(machineId: string): BridgeCatalogProject[] {
   }))
 }
 
-function shellQuote(text: string): string {
+export function shellQuote(text: string): string {
   return `'${text.replace(/'/g, `'\\''`)}'`
 }
 
-/** What the operator runs, from a Switchboard checkout, to register this desktop at the relay. */
+const RELATIVE_OPERATOR_SCRIPT = 'scripts/bridge-operator.mjs'
+
+/**
+ * The operator script as an ABSOLUTE path when this build runs from a checkout,
+ * so the copied command works from any folder. A packaged build has no checkout
+ * (and node cannot read a file inside an asar), so it falls back to the path
+ * relative to a Switchboard checkout.
+ */
+export function operatorScriptPath(root: string = appRootDir()): string {
+  if (/\.asar(\/|$)/.test(root)) return RELATIVE_OPERATOR_SCRIPT
+  const candidate = join(root, 'scripts', 'bridge-operator.mjs')
+  return existsSync(candidate) ? candidate : RELATIVE_OPERATOR_SCRIPT
+}
+
+/** What the operator runs to register this desktop at the relay. */
 export function operatorCommand(input: {
   origin: string
   machineId: string
   label: string
   publicKey: string
+  scriptPath: string
 }): string {
   const env = input.origin === DEFAULT_BRIDGE_RELAY_ORIGIN ? '' : `BRIDGE_RELAY_ORIGIN=${shellQuote(input.origin)} `
-  return `echo ${shellQuote(input.publicKey)} | ${env}node scripts/bridge-operator.mjs enroll ${shellQuote(input.machineId)} ${shellQuote(input.label)} -`
+  return `echo ${shellQuote(input.publicKey)} | ${env}node ${shellQuote(input.scriptPath)} enroll ${shellQuote(input.machineId)} ${shellQuote(input.label)} -`
 }
 
 export function defaultDeviceLabel(): string {
@@ -77,7 +125,10 @@ export function defaultDeviceLabel(): string {
 export class BridgeDeviceLink {
   private client: ReturnType<DeviceLinkDeps['createClient']> | null = null
   private clientStatus: RelayClientStatus | null = null
+  private catalogTimer: ReturnType<typeof setTimeout> | null = null
   private keyError: string | null = null
+  /** The last relay contact of a client that is gone, so the lease outlives a reconnect. */
+  private lastContact: number | null = null
 
   constructor(private readonly deps: DeviceLinkDeps) {}
 
@@ -121,13 +172,21 @@ export class BridgeDeviceLink {
       onStatus: (status) => {
         this.clientStatus = status
       },
+      onControl: (control) => controlListener?.control(control),
+      onRevoked: () => controlListener?.authorityLost('revoked'),
+      onCommand: (frame) => (commandRunner ? commandRunner(frame) : Promise.resolve(null)),
     })
     log.info('bridge relay connection starting')
     this.client.start()
   }
 
   private stopClient(): void {
+    if (this.catalogTimer !== null) {
+      clearTimeout(this.catalogTimer)
+      this.catalogTimer = null
+    }
     if (!this.client) return
+    this.lastContact = this.lastContactAt()
     this.client.stop()
     this.client = null
     this.clientStatus = null
@@ -138,8 +197,36 @@ export class BridgeDeviceLink {
     this.stopClient()
   }
 
+  /**
+   * The relay needs the final list, not one frame per project: "Allow every
+   * project shown" saves each project on its own and every save lands here.
+   */
   catalogChanged(): void {
-    this.client?.sendCatalog()
+    if (!this.client || this.catalogTimer !== null) return
+    this.catalogTimer = setTimeout(() => {
+      this.catalogTimer = null
+      this.client?.sendCatalog()
+    }, CATALOG_COALESCE_MS)
+  }
+
+  /** The last frame from the relay in this run of the app, or null. */
+  lastContactAt(): number | null {
+    const live = this.client?.lastContactAt() ?? null
+    if (live === null) return this.lastContact
+    return this.lastContact === null ? live : Math.max(live, this.lastContact)
+  }
+
+  enrolled(): boolean {
+    return deviceKeyStored(this.deps.keys)
+  }
+
+  /** False when no authenticated connection could take it. */
+  sendStopAck(generation: number, state: 'confirmed' | 'unconfirmed'): boolean {
+    return this.client?.sendStopAck(generation, state) ?? false
+  }
+
+  sendKill(generation: number): boolean {
+    return this.client?.sendKill(generation) ?? false
   }
 
   enroll(label: string): BridgeDeviceStatus {
@@ -159,6 +246,7 @@ export class BridgeDeviceLink {
     this.stopClient()
     removeDeviceKey(this.deps.keys)
     this.keyError = null
+    controlListener?.authorityLost('unenrolled')
     return this.status()
   }
 
@@ -186,6 +274,7 @@ export class BridgeDeviceLink {
               machineId: key.machineId,
               label: key.label,
               publicKey: key.publicKey,
+              scriptPath: operatorScriptPath(),
             })
           : null,
     }

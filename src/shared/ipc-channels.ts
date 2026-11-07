@@ -636,6 +636,16 @@ export const BridgeChannels = {
   SET_DEVICE_LABEL: 'bridge:set-device-label',
   /** () → BridgeDeviceStatus; deletes the local device key */
   REMOVE_DEVICE: 'bridge:remove-device',
+  /** () → BridgeChecksSetup: the named checks per allowed project and their newest recorded run */
+  LIST_CHECKS: 'bridge:list-checks',
+  /** ({ projectId, checks }) → the same as LIST_CHECKS; a check is a program and an argument array */
+  SET_CHECKS: 'bridge:set-checks',
+  /** () → BridgeStopStatus; works with the flag off */
+  STOP_STATUS: 'bridge:stop-status',
+  /** () → BridgeStopStatus; stops all bridge work on this desktop and kills new work */
+  STOP_ALL: 'bridge:stop-all',
+  /** () → BridgeStopStatus; clears a kill, only on a desktop that is not enrolled */
+  CLEAR_KILL: 'bridge:clear-kill',
 } as const
 
 /**

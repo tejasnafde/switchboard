@@ -1,5 +1,8 @@
-import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
+import { createMigratedDb } from './helpers/test-db'
+import Database from 'better-sqlite3'
+import { closeDb, migrate } from '../../src/main/db/database'
+import { getSessionLayout, saveSessionLayout } from '../../src/main/db/settings'
 import {
   canonicalizeForkConversationIdentity,
   canonicalizeForkConversationRequest,
@@ -11,57 +14,36 @@ import {
   decodeForkMessageRow,
   type ForkMessageRow,
 } from '../../src/main/conversations/fork-message-codec'
-import { ensureConversationForkSchema, SqliteConversationForkStore } from '../../src/main/db/conversation-fork'
-
-const databases: Database.Database[] = []
+import { SqliteConversationForkStore } from '../../src/main/db/conversation-fork'
 
 afterEach(() => {
-  while (databases.length > 0) databases.pop()?.close()
+  closeDb()
 })
 
+/**
+ * The app's own migrated schema. A hand-rolled fixture used to stand in for
+ * it here, and it invented `conversations.launch_config_name` - a column no
+ * migration adds - so a fork INSERT that named it passed every test and threw
+ * on a real database.
+ */
 function database(): Database.Database {
-  const db = new Database(':memory:')
-  databases.push(db)
-  db.pragma('foreign_keys = ON')
+  return seed(createMigratedDb())
+}
+
+function seed(db: Database.Database): Database.Database {
   db.exec(`
-    CREATE TABLE projects (
-      path TEXT PRIMARY KEY,
-      name TEXT NOT NULL
-    );
-    CREATE TABLE conversations (
-      id TEXT PRIMARY KEY,
-      project_path TEXT NOT NULL,
-      agent_type TEXT NOT NULL,
-      session_id TEXT,
-      title TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      parent_conversation_id TEXT,
-      forked_at_message_id TEXT,
-      worktree_path TEXT,
-      worktree_branch TEXT,
-      worktree_id TEXT,
-      runtime_mode TEXT,
-      model TEXT,
-      provider_instance_id TEXT,
-      pending_handoff_from TEXT,
-      launch_config_name TEXT,
-      sidebar_role TEXT,
-      FOREIGN KEY (project_path) REFERENCES projects(path) ON DELETE CASCADE
-    );
-    CREATE TABLE messages (
-      id TEXT PRIMARY KEY,
-      conversation_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL DEFAULT '',
-      tool_calls TEXT,
-      images TEXT,
-      timestamp INTEGER NOT NULL,
-      display_body TEXT,
-      pills_meta TEXT,
-      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-    );
     INSERT INTO projects (path, name) VALUES ('/repo', 'repo');
+    INSERT INTO managed_worktrees (
+      id, machine_id, repository_id, project_path, worktree_path, branch,
+      requested_base_ref, resolved_base_commit, management_origin, lifecycle,
+      initial_owner_kind, initial_owner_id, purpose, provenance_json,
+      created_at, updated_at
+    ) VALUES (
+      'worktree-fork', 'machine-remote', '/repo/.git', '/repo',
+      '/repo/.switchboard/worktrees/fork-conversation', 'fork/conversation',
+      'HEAD', 'b', 'managed', 'active', 'conversation', 'fork-conversation',
+      'fork', '{}', 1, 1
+    );
     INSERT INTO conversations (
       id, project_path, agent_type, session_id, title, created_at, updated_at,
       runtime_mode, model, provider_instance_id, sidebar_role
@@ -70,7 +52,6 @@ function database(): Database.Database {
       'sandbox', 'gpt-5', 'codex-work', 'managed'
     );
   `)
-  ensureConversationForkSchema(db)
   return db
 }
 
@@ -296,6 +277,72 @@ describe('conversation fork SQLite store', () => {
     expect(rows.map(decodeForkMessageRow)).toEqual(result?.messages)
     expect(rows.map((row) => row.id)).toEqual(result?.messages.map((message) => message.id))
     expect(result).toEqual(committedInput(store).result)
+  })
+
+  it("stores the fork's launch config on session_layouts, which owns that column", () => {
+    const db = database()
+    saveSessionLayout(
+      'source',
+      JSON.stringify({ rows: [{ windows: [{ panes: [{ label: 'Terminal 1' }] }] }] }),
+      'Development',
+    )
+    const store = new SqliteConversationForkStore(db)
+    reserve(store)
+
+    expect(store.commitCompleted(committedInput(store))).toMatchObject({ kind: 'committed' })
+
+    // The name only, with no panes: the fork hydrates that launch config
+    // against its own worktree instead of replaying the parent's cwds.
+    expect(getSessionLayout('fork-conversation')).toEqual({ layoutJson: '{}', launchConfigName: 'Development' })
+    expect(
+      (db.prepare('PRAGMA table_info(conversations)').all() as Array<{ name: string }>).map((c) => c.name),
+    ).not.toContain('launch_config_name')
+  })
+
+  it('commits a fork on a database upgraded from an older release', () => {
+    // The user's database was not created by today's migrate(): it grew from
+    // the three tables the first release shipped. Build that, upgrade it, and
+    // fork on it, so a column only a fresh schema has cannot pass here.
+    const upgraded = new Database(':memory:')
+    upgraded.pragma('foreign_keys = ON')
+    upgraded.exec(`
+      CREATE TABLE projects (
+        path TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        added_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE conversations (
+        id TEXT PRIMARY KEY,
+        project_path TEXT NOT NULL,
+        agent_type TEXT NOT NULL DEFAULT 'claude-code',
+        session_id TEXT,
+        title TEXT NOT NULL DEFAULT 'New conversation',
+        created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+        FOREIGN KEY (project_path) REFERENCES projects(path) ON DELETE CASCADE
+      );
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        tool_calls TEXT,
+        images TEXT,
+        timestamp INTEGER NOT NULL,
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+      );
+    `)
+    migrate(upgraded)
+    seed(upgraded)
+    const store = new SqliteConversationForkStore(upgraded)
+    reserve(store)
+
+    expect(store.commitCompleted(committedInput(store))).toMatchObject({ kind: 'committed' })
+    expect(
+      upgraded.prepare('SELECT launch_config_name FROM session_layouts WHERE session_id = ?').get('fork-conversation'),
+    ).toEqual({ launch_config_name: 'Development' })
+    upgraded.close()
   })
 
   it('returns the same authoritative result after store recreation', () => {

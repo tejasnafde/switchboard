@@ -1,19 +1,32 @@
 import Database from 'better-sqlite3'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import {
   BRIDGE_CALL_RETENTION_MS,
   bridgeCallTransitionAllowed,
   bridgePolicyModesValid,
+  canonicalBridgeCheck,
+  parseBridgeCheckDefinitions,
+  rollUpBridgeEvidence,
   type BridgeCallState,
+  type BridgeCheckDefinition,
+  type BridgeCheckOutcome,
+  type BridgeCheckSummary,
   type BridgeErrorCode,
+  type BridgeEvidenceStatus,
   type BridgeOperation,
+  type BridgeOriginMarker,
+  type BridgeOriginStopState,
   type BridgeProjectActions,
   type BridgeProjectPolicy,
+  type BridgeStopResult,
 } from '@shared/bridge'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { AgentType } from '@shared/types'
 import { getDb } from './database'
 import { resolveRootThreadId } from './conversations'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('db:bridge')
 
 // ─── Instinct bridge: project policies, call ledger, origins, stop generation ──
 //
@@ -68,12 +81,64 @@ export function ensureBridgeSchema(db: Database.Database): void {
       generation  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS bridge_check_runs (
+      run_id          TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      project_id      TEXT NOT NULL,
+      name            TEXT NOT NULL,
+      definition_hash TEXT NOT NULL,
+      cwd             TEXT NOT NULL,
+      execution_root_revision INTEGER,
+      commit_sha      TEXT,
+      tree_before     TEXT NOT NULL,
+      tree_after      TEXT,
+      dirty           INTEGER NOT NULL,
+      state           TEXT NOT NULL,
+      exit_code       INTEGER,
+      signal          TEXT,
+      log_digest      TEXT,
+      log_bytes       INTEGER,
+      definition_changed INTEGER NOT NULL DEFAULT 0,
+      started_at      INTEGER NOT NULL,
+      ended_at        INTEGER
+    );
+    -- One run per chat, definition and source snapshot: a read never starts a second.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_bridge_check_runs_key
+      ON bridge_check_runs(conversation_id, definition_hash, tree_before);
+    CREATE INDEX IF NOT EXISTS idx_bridge_check_runs_chat ON bridge_check_runs(conversation_id, started_at);
   `)
-  const callColumns = new Set(
-    (db.prepare('PRAGMA table_info(bridge_calls)').all() as Array<{ name: string }>).map((c) => c.name),
-  )
+  const policyColumns = columnsOf(db, 'bridge_project_policies')
+  // The named checks the owner chose, each a program and an argument array.
+  if (!policyColumns.has('checks')) db.exec(`ALTER TABLE bridge_project_policies ADD COLUMN checks TEXT`)
+  const callColumns = columnsOf(db, 'bridge_calls')
   // What an accepted call did (the actual delivery, the stop status), for a replay.
   if (!callColumns.has('result')) db.exec('ALTER TABLE bridge_calls ADD COLUMN result TEXT')
+  const originColumns = columnsOf(db, 'bridge_origins')
+  // Who started the work: a local agent, or the owner through the relay (the control lease covers only that).
+  if (!originColumns.has('source'))
+    db.exec(`ALTER TABLE bridge_origins ADD COLUMN source TEXT NOT NULL DEFAULT 'local'`)
+  // The last stop's state on this chat; NULL again after the next bridge call.
+  if (!originColumns.has('stop_state')) db.exec('ALTER TABLE bridge_origins ADD COLUMN stop_state TEXT')
+  // The checkout as it stood when the last bridge call reached the chat: the baseline a read diffs against.
+  if (!originColumns.has('baseline_tree')) db.exec('ALTER TABLE bridge_origins ADD COLUMN baseline_tree TEXT')
+  if (!originColumns.has('baseline_commit')) db.exec('ALTER TABLE bridge_origins ADD COLUMN baseline_commit TEXT')
+  if (!originColumns.has('baseline_at')) db.exec('ALTER TABLE bridge_origins ADD COLUMN baseline_at INTEGER')
+  const checkRunColumns = columnsOf(db, 'bridge_check_runs')
+  // Why the definition no longer reads as the configured one: the chat wrote a
+  // file that decides what it runs, or the project's checks were replaced.
+  if (!checkRunColumns.has('definition_changed_reason'))
+    db.exec('ALTER TABLE bridge_check_runs ADD COLUMN definition_changed_reason TEXT')
+  const stopColumns = columnsOf(db, 'bridge_stop_generation')
+  if (!stopColumns.has('killed'))
+    db.exec('ALTER TABLE bridge_stop_generation ADD COLUMN killed INTEGER NOT NULL DEFAULT 0')
+  // A Stop all made here that the relay has not confirmed yet: sent again on the next welcome.
+  if (!stopColumns.has('kill_pending'))
+    db.exec('ALTER TABLE bridge_stop_generation ADD COLUMN kill_pending INTEGER NOT NULL DEFAULT 0')
+  if (!stopColumns.has('last_result')) db.exec('ALTER TABLE bridge_stop_generation ADD COLUMN last_result TEXT')
+}
+
+function columnsOf(db: Database.Database, table: string): Set<string> {
+  return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name))
 }
 
 // ─── Project policies ───────────────────────────────────────────
@@ -83,18 +148,31 @@ export interface StoredBridgeProjectPolicy extends BridgeProjectPolicy {
   updated_at: number
 }
 
-type PolicyRow = Omit<StoredBridgeProjectPolicy, 'allowed_agents' | 'actions'> & {
+type PolicyRow = Omit<StoredBridgeProjectPolicy, 'allowed_agents' | 'actions' | 'checks'> & {
   allowed_agents: string
   actions: string
+  checks: string | null
 }
 
 const toPolicy = (r: PolicyRow): StoredBridgeProjectPolicy => ({
   ...r,
   allowed_agents: JSON.parse(r.allowed_agents) as AgentType[],
   actions: JSON.parse(r.actions) as BridgeProjectActions,
+  checks: parseStoredChecks(r.project_id, r.checks),
   default_mode: r.default_mode as RuntimeMode,
   maximum_mode: r.maximum_mode as RuntimeMode,
 })
+
+/** A row an older build wrote has no checks; one this build cannot read counts as none. */
+function parseStoredChecks(projectId: string, raw: string | null): BridgeCheckDefinition[] {
+  if (!raw) return []
+  try {
+    return parseBridgeCheckDefinitions(JSON.parse(raw))
+  } catch (err) {
+    log.warn('stored bridge checks are not valid JSON; the project has no configured check', { projectId, err })
+    return []
+  }
+}
 
 /** Inserts or replaces a policy and raises its revision, so a call resolved under the old one can tell. */
 export function saveBridgeProjectPolicy(policy: BridgeProjectPolicy): StoredBridgeProjectPolicy {
@@ -102,18 +180,20 @@ export function saveBridgeProjectPolicy(policy: BridgeProjectPolicy): StoredBrid
   getDb()
     .prepare(
       `INSERT INTO bridge_project_policies (project_id, label, machine_id, canonical_local_root, allowed_agents,
-         default_agent, default_model, default_mode, maximum_mode, actions, revision, updated_at)
+         default_agent, default_model, default_mode, maximum_mode, actions, checks, revision, updated_at)
        VALUES (@project_id, @label, @machine_id, @canonical_local_root, @allowed_agents,
-         @default_agent, @default_model, @default_mode, @maximum_mode, @actions, 1, @now)
+         @default_agent, @default_model, @default_mode, @maximum_mode, @actions, @checks, 1, @now)
        ON CONFLICT(project_id) DO UPDATE SET label = @label, machine_id = @machine_id,
          canonical_local_root = @canonical_local_root, allowed_agents = @allowed_agents,
          default_agent = @default_agent, default_model = @default_model, default_mode = @default_mode,
-         maximum_mode = @maximum_mode, actions = @actions, revision = revision + 1, updated_at = @now`,
+         maximum_mode = @maximum_mode, actions = @actions, checks = @checks,
+         revision = revision + 1, updated_at = @now`,
     )
     .run({
       ...policy,
       allowed_agents: JSON.stringify(policy.allowed_agents),
       actions: JSON.stringify(policy.actions),
+      checks: JSON.stringify(parseBridgeCheckDefinitions(policy.checks)),
       now: Date.now(),
     })
   return getBridgeProjectPolicy(policy.project_id)!
@@ -339,13 +419,23 @@ export function recoverBridgeCalls(): { rejected: number; unknown: number } {
 
 // ─── Origins ────────────────────────────────────────────────────
 
+/** `local`: a local agent's MCP call. `relay`: the owner through the relay, held by the control lease. */
+export type BridgeOriginSource = 'local' | 'relay'
+
 export interface BridgeOrigin {
   conversationId: string
   callId: string
   projectId: string
   machineId: string
   policyRevision: number
+  /** The stop generation of the latest bridge call into the chat. */
   stopGeneration: number
+  source: BridgeOriginSource
+  stopState: BridgeOriginStopState | null
+  /** The checkout when the last bridge call reached the chat: a read diffs against it. */
+  baselineTree: string | null
+  baselineCommit: string | null
+  baselineAt: number | null
   createdAt: number
 }
 
@@ -356,6 +446,11 @@ type OriginRow = {
   machine_id: string
   policy_revision: number
   stop_generation: number
+  source: BridgeOriginSource
+  stop_state: BridgeOriginStopState | null
+  baseline_tree: string | null
+  baseline_commit: string | null
+  baseline_at: number | null
   created_at: number
 }
 
@@ -366,12 +461,19 @@ const toOrigin = (r: OriginRow): BridgeOrigin => ({
   machineId: r.machine_id,
   policyRevision: r.policy_revision,
   stopGeneration: r.stop_generation,
+  source: r.source,
+  stopState: r.stop_state,
+  baselineTree: r.baseline_tree,
+  baselineCommit: r.baseline_commit,
+  baselineAt: r.baseline_at,
   createdAt: r.created_at,
 })
 
 /**
- * Marks a chat as bridge-started, under its root id. The first origin stays:
- * a later call into the same chat returns it unchanged.
+ * Marks a chat as bridge-started, under its root id. The first call, project
+ * and revision stay. A later call into the same chat stamps the current stop
+ * generation, clears the last stop state, and makes the source `relay` once
+ * any relay call reached it.
  */
 export function recordBridgeOrigin(o: {
   conversationId: string
@@ -379,14 +481,62 @@ export function recordBridgeOrigin(o: {
   projectId: string
   machineId: string
   policyRevision: number
+  source: BridgeOriginSource
 }): BridgeOrigin {
   const db = getDb()
   const root = resolveRootThreadId(o.conversationId, db)
   db.prepare(
-    `INSERT INTO bridge_origins (conversation_id, call_id, project_id, machine_id, policy_revision, stop_generation, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(conversation_id) DO NOTHING`,
-  ).run(root, o.callId, o.projectId, o.machineId, o.policyRevision, readBridgeStopGeneration(), Date.now())
+    `INSERT INTO bridge_origins (conversation_id, call_id, project_id, machine_id, policy_revision, stop_generation,
+       source, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(conversation_id) DO UPDATE SET
+       stop_generation = excluded.stop_generation, stop_state = NULL,
+       source = CASE WHEN excluded.source = 'relay' THEN 'relay' ELSE source END`,
+  ).run(root, o.callId, o.projectId, o.machineId, o.policyRevision, readBridgeStopGeneration(), o.source, Date.now())
   return getBridgeOrigin(root)!
+}
+
+/**
+ * The checkout as it stood when the bridge call arrived, read before the
+ * turn ran. A later read diffs the checkout against it, so "nothing changed"
+ * is a measured fact and not the agent's word. Any id of the chat.
+ */
+export function setBridgeOriginBaseline(
+  conversationId: string,
+  baseline: { tree: string; commit: string | null; at?: number },
+): void {
+  const db = getDb()
+  db.prepare(
+    'UPDATE bridge_origins SET baseline_tree = ?, baseline_commit = ?, baseline_at = ? WHERE conversation_id = ?',
+  ).run(baseline.tree, baseline.commit, baseline.at ?? Date.now(), resolveRootThreadId(conversationId, db))
+}
+
+/** Records a stop's state on these chats (root ids). */
+export function setBridgeOriginStopState(conversationIds: string[], state: BridgeOriginStopState): void {
+  const db = getDb()
+  const update = db.prepare('UPDATE bridge_origins SET stop_state = ? WHERE conversation_id = ?')
+  db.transaction(() => {
+    for (const id of conversationIds) update.run(state, id)
+  })()
+}
+
+/**
+ * Every chat with a bridge origin, as the chat lists mark it: root id to its
+ * marker, with the measured-check summary read from the recorded runs. No
+ * checkout is read here: a list must not spawn git for every row, so a
+ * summary is measured only for a chat whose current tree the caller passes.
+ */
+export function bridgeOriginMarkers(currentTrees?: ReadonlyMap<string, string>): Map<string, BridgeOriginMarker> {
+  const rows = getDb().prepare('SELECT conversation_id, stop_state FROM bridge_origins').all() as Array<
+    Pick<OriginRow, 'conversation_id' | 'stop_state'>
+  >
+  if (rows.length === 0) return new Map()
+  const checks = bridgeCheckSummaries(currentTrees)
+  return new Map(
+    rows.map((r) => {
+      const summary = checks.get(r.conversation_id)
+      return [r.conversation_id, { stop: r.stop_state, ...(summary ? { checks: summary } : {}) }]
+    }),
+  )
 }
 
 /** The chats bridge work started or reached on one machine. */
@@ -414,21 +564,394 @@ export function readBridgeStopGeneration(): number {
   return row?.generation ?? 0
 }
 
+export interface BridgeStopRecord {
+  generation: number
+  killed: boolean
+  /** A kill made on this desktop that the relay has not confirmed yet. */
+  killPending: boolean
+  lastResult: BridgeStopResult | null
+}
+
+type StopRow = { generation: number; killed: number; kill_pending: number; last_result: string | null }
+
+export function readBridgeStopRecord(): BridgeStopRecord {
+  const row = getDb()
+    .prepare('SELECT generation, killed, kill_pending, last_result FROM bridge_stop_generation WHERE id = 1')
+    .get() as StopRow | undefined
+  if (!row) return { generation: 0, killed: false, killPending: false, lastResult: null }
+  let lastResult: BridgeStopResult | null = null
+  try {
+    lastResult = row.last_result ? (JSON.parse(row.last_result) as BridgeStopResult) : null
+  } catch (err) {
+    // A row this build cannot read counts as no result: the next stop writes a new one.
+    log.warn('the last bridge stop result is not valid JSON, starting over', err)
+  }
+  return { generation: row.generation, killed: row.killed === 1, killPending: row.kill_pending === 1, lastResult }
+}
+
 /**
- * Raises the stop generation and returns it: by one for a local stop, or to
- * `to` for a generation the relay recorded. It never goes down.
+ * Writes the stop state in one transaction. The generation never goes down;
+ * `killed` and `killPending` are written as given, and `lastResult` only when
+ * passed. Returns the stored record.
  */
-export function advanceBridgeStopGeneration(to?: number): number {
+export function writeBridgeStopRecord(next: {
+  generation: number
+  killed: boolean
+  killPending: boolean
+  lastResult?: BridgeStopResult
+}): BridgeStopRecord {
   const db = getDb()
   return db
-    .transaction((): number => {
-      const current = readBridgeStopGeneration()
-      const next = to === undefined ? current + 1 : Math.max(current, to)
+    .transaction((): BridgeStopRecord => {
+      const current = readBridgeStopRecord()
+      const result = next.lastResult ?? current.lastResult
       db.prepare(
-        `INSERT INTO bridge_stop_generation (id, generation, updated_at) VALUES (1, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET generation = excluded.generation, updated_at = excluded.updated_at`,
-      ).run(next, Date.now())
-      return next
+        `INSERT INTO bridge_stop_generation (id, generation, killed, kill_pending, last_result, updated_at)
+         VALUES (1, @generation, @killed, @killPending, @lastResult, @now)
+         ON CONFLICT(id) DO UPDATE SET generation = excluded.generation, killed = excluded.killed,
+           kill_pending = excluded.kill_pending, last_result = excluded.last_result, updated_at = excluded.updated_at`,
+      ).run({
+        generation: Math.max(current.generation, next.generation),
+        killed: next.killed ? 1 : 0,
+        killPending: next.killPending ? 1 : 0,
+        lastResult: result ? JSON.stringify(result) : null,
+        now: Date.now(),
+      })
+      return readBridgeStopRecord()
     })
     .immediate()
+}
+
+/** At start: a stop that was still pending when the app ended cannot be accounted for. Returns those chats. */
+export function markPendingBridgeStopsUnconfirmed(): string[] {
+  const db = getDb()
+  return db
+    .transaction((): string[] => {
+      const ids = (
+        db.prepare(`SELECT conversation_id FROM bridge_origins WHERE stop_state = 'pending'`).all() as Array<{
+          conversation_id: string
+        }>
+      ).map((r) => r.conversation_id)
+      db.prepare(`UPDATE bridge_origins SET stop_state = 'unconfirmed' WHERE stop_state = 'pending'`).run()
+      return ids
+    })
+    .immediate()
+}
+
+/**
+ * Automatic resumes (limit auto-resume) skip a bridge chat while bridge work
+ * is killed, or when a stop of all bridge work came after its last bridge call.
+ */
+export function bridgeAutoResumeBlocked(conversationId: string): boolean {
+  const origin = getBridgeOrigin(conversationId)
+  if (!origin) return false
+  const stop = readBridgeStopRecord()
+  return stop.killed || origin.stopGeneration < stop.generation
+}
+
+// ─── Measured check runs ────────────────────────────────────────
+//
+// One row per run of a configured check, keyed by the ROOT chat id, the
+// definition hash and the source snapshot the run started from, so the same
+// check never runs twice for the same code and a read never starts one. The
+// row holds only what was observed: the command's hash, where it ran, the
+// trees before and after, the real exit code or signal and a digest of the
+// masked output. No log text and no agent claim is stored here.
+
+/** `running`: started, no result yet. `cancelled`: a new turn, a stop or a source change ended it before a result. */
+export const BRIDGE_CHECK_RUN_STATES = ['running', 'finished', 'cancelled', 'unavailable'] as const
+export type BridgeCheckRunState = (typeof BRIDGE_CHECK_RUN_STATES)[number]
+
+/**
+ * What made a run stop reading as the configured check. `chat_edit`: the turn
+ * wrote a file the definition names, or one that decides what a runner does.
+ * `checks_replaced`: the owner changed the project's check list afterwards,
+ * and the chat wrote nothing.
+ */
+export const BRIDGE_CHECK_DEFINITION_CHANGES = ['chat_edit', 'checks_replaced'] as const
+export type BridgeCheckDefinitionChange = (typeof BRIDGE_CHECK_DEFINITION_CHANGES)[number]
+
+export interface BridgeCheckRun {
+  runId: string
+  conversationId: string
+  projectId: string
+  name: string
+  definitionHash: string
+  /** The folder the command ran in. Local only, never in a public answer. */
+  cwd: string
+  executionRootRevision: number | null
+  /** The commit the run is bound to, or null when it measured a dirty tree. */
+  commit: string | null
+  treeBefore: string
+  treeAfter: string | null
+  dirty: boolean
+  state: BridgeCheckRunState
+  exitCode: number | null
+  signal: string | null
+  logDigest: string | null
+  logBytes: number | null
+  definitionChanged: boolean
+  /** Null on a run that is still the configured check, and on one recorded before the reason was kept. */
+  definitionChangedReason: BridgeCheckDefinitionChange | null
+  startedAt: number
+  endedAt: number | null
+}
+
+type CheckRunRow = {
+  run_id: string
+  conversation_id: string
+  project_id: string
+  name: string
+  definition_hash: string
+  cwd: string
+  execution_root_revision: number | null
+  commit_sha: string | null
+  tree_before: string
+  tree_after: string | null
+  dirty: number
+  state: BridgeCheckRunState
+  exit_code: number | null
+  signal: string | null
+  log_digest: string | null
+  log_bytes: number | null
+  definition_changed: number
+  definition_changed_reason: BridgeCheckDefinitionChange | null
+  started_at: number
+  ended_at: number | null
+}
+
+const toCheckRun = (r: CheckRunRow): BridgeCheckRun => ({
+  runId: r.run_id,
+  conversationId: r.conversation_id,
+  projectId: r.project_id,
+  name: r.name,
+  definitionHash: r.definition_hash,
+  cwd: r.cwd,
+  executionRootRevision: r.execution_root_revision,
+  commit: r.commit_sha,
+  treeBefore: r.tree_before,
+  treeAfter: r.tree_after,
+  dirty: r.dirty === 1,
+  state: r.state,
+  exitCode: r.exit_code,
+  signal: r.signal,
+  logDigest: r.log_digest,
+  logBytes: r.log_bytes,
+  definitionChanged: r.definition_changed === 1,
+  definitionChangedReason: r.definition_changed_reason,
+  startedAt: r.started_at,
+  endedAt: r.ended_at,
+})
+
+/** How a recorded run reads against the tree the checkout is on now. */
+export interface BridgeCheckRunProjection {
+  status: BridgeEvidenceStatus
+  /** The source changed while the run was going, so it did not test one tree. */
+  sourceMoved: boolean
+  /** The checkout is still on the tree the run started from. */
+  current: boolean
+}
+
+/**
+ * The ONE rule every surface judges a recorded run by, so a chat row, a
+ * phone and the Settings panel never claim more than `read_chat` does. A
+ * finished run is measured only when the checkout is still on the tree it
+ * started from, nothing moved while it ran, and the chat did not touch what
+ * decides the check. `currentTree` is the tree the checkout is on NOW; null
+ * means it was not read, which is never a measurement of the current code.
+ */
+export function projectBridgeCheckRun(
+  run: Pick<BridgeCheckRun, 'state' | 'treeBefore' | 'treeAfter' | 'definitionChanged'>,
+  currentTree: string | null,
+): BridgeCheckRunProjection {
+  const sourceMoved = run.treeAfter !== null && run.treeAfter !== run.treeBefore
+  const current = currentTree !== null && currentTree === run.treeBefore && !sourceMoved
+  if (run.state === 'unavailable') return { status: 'unavailable', sourceMoved, current }
+  if (run.state !== 'finished') return { status: 'not_measured', sourceMoved, current }
+  return { status: current && !run.definitionChanged ? 'measured' : 'stale', sourceMoved, current }
+}
+
+/** What a recorded run ended as. Only a run that finished with exit 0 passed. */
+export function bridgeCheckOutcome(run: BridgeCheckRun): BridgeCheckOutcome {
+  if (run.state === 'unavailable') return 'unavailable'
+  if (run.state !== 'finished') return 'not_run'
+  return run.exitCode === 0 ? 'passed' : 'failed'
+}
+
+/** The hash a run is keyed by: the name, the program and the argument array. */
+export function bridgeCheckDefinitionHash(def: BridgeCheckDefinition): string {
+  return createHash('sha256').update(canonicalBridgeCheck(def)).digest('hex').slice(0, 32)
+}
+
+/**
+ * Claims the one run for this chat, definition and source snapshot. Null when
+ * a row is already there, so a second scheduler, a retry or a restart never
+ * runs the same check twice over the same code.
+ */
+export function claimBridgeCheckRun(input: {
+  conversationId: string
+  projectId: string
+  name: string
+  definitionHash: string
+  cwd: string
+  executionRootRevision: number | null
+  commit: string | null
+  treeBefore: string
+  dirty: boolean
+  definitionChanged: boolean
+  now?: number
+}): BridgeCheckRun | null {
+  const db = getDb()
+  const runId = `bchk_${randomUUID()}`
+  const changes = db
+    .prepare(
+      `INSERT OR IGNORE INTO bridge_check_runs (run_id, conversation_id, project_id, name, definition_hash, cwd,
+         execution_root_revision, commit_sha, tree_before, dirty, state, definition_changed,
+         definition_changed_reason, started_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
+    )
+    .run(
+      runId,
+      resolveRootThreadId(input.conversationId, db),
+      input.projectId,
+      input.name,
+      input.definitionHash,
+      input.cwd,
+      input.executionRootRevision,
+      input.commit,
+      input.treeBefore,
+      input.dirty ? 1 : 0,
+      input.definitionChanged ? 1 : 0,
+      // Only the scheduler sets the flag here, and only for what the chat wrote.
+      input.definitionChanged ? 'chat_edit' : null,
+      input.now ?? Date.now(),
+    ).changes
+  return changes > 0 ? getBridgeCheckRun(runId) : null
+}
+
+export function getBridgeCheckRun(runId: string): BridgeCheckRun | null {
+  const row = getDb().prepare('SELECT * FROM bridge_check_runs WHERE run_id = ?').get(runId) as CheckRunRow | undefined
+  return row ? toCheckRun(row) : null
+}
+
+/** The result of a run that ended. A row already out of `running` keeps what it has. */
+export function finishBridgeCheckRun(
+  runId: string,
+  result: {
+    state: Exclude<BridgeCheckRunState, 'running'>
+    exitCode?: number | null
+    signal?: string | null
+    logDigest?: string | null
+    logBytes?: number | null
+    treeAfter?: string | null
+    now?: number
+  },
+): boolean {
+  return (
+    getDb()
+      .prepare(
+        `UPDATE bridge_check_runs SET state = ?, exit_code = ?, signal = ?, log_digest = ?, log_bytes = ?,
+           tree_after = ?, ended_at = ? WHERE run_id = ? AND state = 'running'`,
+      )
+      .run(
+        result.state,
+        result.exitCode ?? null,
+        result.signal ?? null,
+        result.logDigest ?? null,
+        result.logBytes ?? null,
+        result.treeAfter ?? null,
+        result.now ?? Date.now(),
+        runId,
+      ).changes > 0
+  )
+}
+
+/** A new turn on the chat: every run still going is cancelled, so none reports a result it never had. */
+export function cancelRunningBridgeCheckRuns(conversationId: string, now = Date.now()): number {
+  const db = getDb()
+  return db
+    .prepare(
+      `UPDATE bridge_check_runs SET state = 'cancelled', ended_at = ?
+       WHERE conversation_id = ? AND state = 'running'`,
+    )
+    .run(now, resolveRootThreadId(conversationId, db)).changes
+}
+
+/** At start: a run the previous process was still going cannot be accounted for. */
+export function cancelInterruptedBridgeCheckRuns(now = Date.now()): number {
+  return getDb()
+    .prepare(`UPDATE bridge_check_runs SET state = 'cancelled', ended_at = ? WHERE state = 'running'`)
+    .run(now).changes
+}
+
+/**
+ * The owner changed a project's checks: every recorded run there is flagged,
+ * so a passing result never reads as the configured release check again. A
+ * run already flagged for what the chat wrote keeps that reason: the file is
+ * still written.
+ */
+export function flagBridgeCheckDefinitionsChanged(projectId: string, keepHashes: readonly string[]): number {
+  const db = getDb()
+  const placeholders = keepHashes.map(() => '?').join(', ')
+  const where = keepHashes.length > 0 ? ` AND definition_hash NOT IN (${placeholders})` : ''
+  return db
+    .prepare(
+      `UPDATE bridge_check_runs SET definition_changed = 1,
+         definition_changed_reason = COALESCE(definition_changed_reason, 'checks_replaced')
+       WHERE project_id = ?${where}`,
+    )
+    .run(projectId, ...keepHashes).changes
+}
+
+/** The newest run per check name on one chat (any of its ids), newest first. */
+export function listBridgeCheckRuns(conversationId: string): BridgeCheckRun[] {
+  const db = getDb()
+  const rows = db
+    .prepare('SELECT * FROM bridge_check_runs WHERE conversation_id = ? ORDER BY started_at DESC')
+    .all(resolveRootThreadId(conversationId, db)) as CheckRunRow[]
+  const newest = new Map<string, CheckRunRow>()
+  for (const row of rows) if (!newest.has(row.name)) newest.set(row.name, row)
+  return [...newest.values()].map(toCheckRun)
+}
+
+/**
+ * Root chat id to the summary a chat list shows: the newest run per check
+ * name, judged by `projectBridgeCheckRun` and counted. One unmeasured check
+ * makes the whole summary unmeasured.
+ *
+ * A list reads no checkout, so the caller passes the tree each chat is on
+ * now for the chats it knows. A chat with no tree given is never measured:
+ * that is what `read_chat` says about a checkout it did not read, and a row
+ * must never claim more than that.
+ */
+export function bridgeCheckSummaries(currentTrees?: ReadonlyMap<string, string>): Map<string, BridgeCheckSummary> {
+  const rows = getDb().prepare('SELECT * FROM bridge_check_runs ORDER BY started_at DESC').all() as CheckRunRow[]
+  const newest = new Map<string, CheckRunRow>()
+  for (const row of rows) {
+    const key = `${row.conversation_id}\u0000${row.name}`
+    if (!newest.has(key)) newest.set(key, row)
+  }
+  const summaries = new Map<string, BridgeCheckSummary>()
+  for (const row of newest.values()) {
+    const run = toCheckRun(row)
+    const { status } = projectBridgeCheckRun(run, currentTrees?.get(row.conversation_id) ?? null)
+    const summary = summaries.get(row.conversation_id) ?? { status: 'measured', passed: 0, failed: 0 }
+    if (status === 'measured') {
+      if (run.exitCode === 0) summary.passed += 1
+      else summary.failed += 1
+    }
+    summary.status = rollUpBridgeEvidence([summary.status, status])
+    summaries.set(row.conversation_id, summary)
+  }
+  return summaries
+}
+
+/** The newest run per check name across every bridge chat of one project, newest first. */
+export function latestBridgeCheckRunsForProject(projectId: string): BridgeCheckRun[] {
+  const rows = getDb()
+    .prepare('SELECT * FROM bridge_check_runs WHERE project_id = ? ORDER BY started_at DESC')
+    .all(projectId) as CheckRunRow[]
+  const newest = new Map<string, CheckRunRow>()
+  for (const row of rows) if (!newest.has(row.name)) newest.set(row.name, row)
+  return [...newest.values()].map(toCheckRun)
 }

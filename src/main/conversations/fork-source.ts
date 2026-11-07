@@ -36,8 +36,10 @@ type ForkSourceRow = Pick<
   | 'runtime_mode'
   | 'model'
   | 'reasoning_effort'
-  | 'launch_config_name'
->
+> & {
+  /** From `session_layouts`, which owns it: `conversations` has no such column. */
+  launch_config_name?: string | null
+}
 
 export function projectForkSourceExecution(row: ForkSourceRow, context: { machineId: string }): ForkSourceExecution {
   if (!isAgentProvider(row.agent_type)) {

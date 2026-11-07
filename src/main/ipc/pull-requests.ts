@@ -59,6 +59,7 @@ import {
 } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
 import type { PrReading } from '@shared/chat-snooze'
+import type { BridgePrReading } from '../bridge/evidence'
 import { storeConversationSettled } from '../conversations/chat-settle'
 import { createSettleOnMerge, type SettleOnMerge } from '../pull-requests/settle-on-merge'
 import { PullRequestAutoLinker } from '../pull-requests/auto-link'
@@ -283,6 +284,24 @@ export async function readPullRequestForSnooze(key: string): Promise<PrReading |
     headSha: read.data.headSha,
     checksFailed: read.data.checks.state === 'failure',
     changesRequestedAt: changes.length > 0 ? Math.max(...changes) : null,
+  }
+}
+
+/**
+ * A linked pull request as the Instinct bridge's evidence reads it. Null when
+ * the host could not be read, which the projection reports as `unavailable`,
+ * never as "no pull request".
+ */
+export async function readPullRequestForBridge(ref: PrRef): Promise<BridgePrReading | null> {
+  const read = await getService().detail(ref)
+  if (!read.ok) return null
+  const { url, sourceBranch, state, headSha, checks } = read.data
+  return {
+    url,
+    sourceBranch: sourceBranch || null,
+    state,
+    headSha,
+    checks: { state: checks.state, total: checks.total, passed: checks.passed, failed: checks.failed },
   }
 }
 

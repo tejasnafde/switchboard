@@ -1626,6 +1626,7 @@ private fun ConnectedThreadRoute(
                     ThreadSnoozeLine(state) { onDone -> snoozeStore.wake(lease.client, route.threadId, onDone) }
                 }
             },
+            offerWorktreeFork = GitContextPresenter.offersWorktreeFork(gitContextState),
             onFork = { messageId, withWorktree ->
                 lease.client.loadSession(route.threadId) { loadedResponse ->
                     when (val loaded = loadedResponse.outcome) {

@@ -1,9 +1,13 @@
 #!/usr/bin/env node
-// Operator commands for the Instinct bridge relay's device list.
+// Operator commands for the Instinct bridge relay's device list and stop controls.
 //
 //   node scripts/bridge-operator.mjs enroll <machine_id> <label> <public_key_file|->
 //   node scripts/bridge-operator.mjs revoke <machine_id>
 //   node scripts/bridge-operator.mjs list
+//   node scripts/bridge-operator.mjs stop-status            stop generation, kill and each machine's stop state
+//   node scripts/bridge-operator.mjs kill                   stop bridge work on every machine and refuse new work
+//   node scripts/bridge-operator.mjs clear-kill             allow new bridge work again (the generation stays)
+//   node scripts/bridge-operator.mjs revoke-assistant-key   disable the assistant key and stop bridge work
 //
 // The operator key comes from BRIDGE_OPERATOR_KEY, else Secret Manager
 // `switchboard-bridge-operator-key` (project teejayproject, gcloud
@@ -13,12 +17,14 @@
 // localhost and [::1].
 //
 // The public key file holds what Settings > Labs shows: SPKI base64, a PEM
-// public key, or a public JWK. `-` reads it from stdin.
+// public key, or a public JWK. `-` reads it from stdin. Nothing here reads the
+// working folder, so an absolute path to this script runs from anywhere; that
+// is the command Settings > Labs copies.
 
 import { execFileSync } from 'node:child_process'
 import { createPublicKey } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
+import { readFileSync, realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const USER_AGENT = 'Switchboard-operator/1'
 const DEFAULT_ORIGIN = 'https://bridge.tn07.dev'
@@ -113,6 +119,14 @@ async function request(method, path, body) {
   return parsed
 }
 
+/** The stop commands take no arguments: the relay keeps one stop state for all machines. */
+const STOP_COMMANDS = {
+  'stop-status': ['GET', '/operator/stop'],
+  kill: ['POST', '/operator/stop'],
+  'clear-kill': ['DELETE', '/operator/stop'],
+  'revoke-assistant-key': ['POST', '/operator/assistant-key/revoke'],
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2)
   if (command === 'enroll') {
@@ -133,9 +147,29 @@ async function main() {
     console.log(JSON.stringify(result, null, 2))
   } else if (command === 'list') {
     console.log(JSON.stringify(await request('GET', '/operator/devices'), null, 2))
+  } else if (Object.hasOwn(STOP_COMMANDS, command ?? '')) {
+    const [method, path] = STOP_COMMANDS[command]
+    console.log(JSON.stringify(await request(method, path), null, 2))
   } else {
-    fail('usage: enroll <machine_id> <label> <public_key_file|-> | revoke <machine_id> | list')
+    fail(
+      'usage: enroll <machine_id> <label> <public_key_file|-> | revoke <machine_id> | list | stop-status | kill | clear-kill | revoke-assistant-key',
+    )
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main()
+/**
+ * True when node was given THIS file to run. Both sides are resolved through
+ * realpath: a run from a symlinked path (anything under /var/folders, which is
+ * /private/var) otherwise compares unequal, and the script exits 0 doing
+ * nothing.
+ */
+export function isDirectRun(moduleUrl, entry) {
+  if (!entry) return false
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(entry)
+  } catch {
+    return false
+  }
+}
+
+if (isDirectRun(import.meta.url, process.argv[1])) await main()

@@ -14,6 +14,17 @@ data class GitContextPresentation(
 )
 
 object GitContextPresenter {
+    /**
+     * Whether to offer "fork into a new worktree". A folder that is not a git
+     * work tree has no HEAD to branch from, and neither has a folder that is
+     * gone, so the choice is left out. Only an answer that proves one of those
+     * drops it: a read that failed for another reason, or that has not
+     * answered, keeps the choice, and the backend refuses a request it cannot
+     * serve. Mirrors `offerForkIntoWorktree` in `src/shared/conversation-fork.ts`.
+     */
+    fun offersWorktreeFork(state: GitContextState): Boolean =
+        !(state.missing || state.error?.contains("not a git repository", ignoreCase = true) == true)
+
     fun present(
         projectPath: String,
         worktreePath: String?,

@@ -5,16 +5,29 @@
  * under its realpath; taking it off deletes the policy by id, so a policy
  * whose folder moved or left the sidebar can still be removed. Nothing is
  * allowed until the owner chooses. Reached only through the admin-scoped
- * `bridge:*` channels.
+ * `bridge:*` channels. The same file holds the owner's named checks per
+ * project and the newest recorded run of each.
  */
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { defaultBridgeProjectPolicy, type BridgeProjectSetupRow } from '@shared/bridge'
 import {
+  defaultBridgeProjectPolicy,
+  parseBridgeCheckDefinitions,
+  type BridgeCheckResultRow,
+  type BridgeProjectChecksRow,
+  type BridgeProjectSetupRow,
+} from '@shared/bridge'
+import {
+  bridgeCheckDefinitionHash,
+  bridgeCheckOutcome,
   deleteBridgeProjectPolicy,
+  flagBridgeCheckDefinitionsChanged,
+  getBridgeProjectPolicy,
   getProjects,
   hubInstallId,
+  latestBridgeCheckRunsForProject,
   listBridgeProjectPolicies,
+  projectBridgeCheckRun,
   saveBridgeProjectPolicy,
 } from '../db/database'
 import { createMainLogger } from '../logger'
@@ -75,6 +88,44 @@ export function listBridgeProjectSetup(machineId = hubInstallId()): BridgeProjec
     })
   }
   return rows
+}
+
+/**
+ * The checks of every allowed project on this machine, with the newest
+ * recorded run per name. A run that was cancelled, flagged or never finished
+ * is reported as it is: nothing here turns into a pass.
+ */
+export function listBridgeChecksSetup(machineId = hubInstallId()): BridgeProjectChecksRow[] {
+  return listBridgeProjectPolicies()
+    .filter((p) => p.machine_id === machineId)
+    .map((policy) => ({
+      project_id: policy.project_id,
+      label: policy.label,
+      checks: policy.checks,
+      results: latestBridgeCheckRunsForProject(policy.project_id).map((run): BridgeCheckResultRow => ({
+        name: run.name,
+        // The panel reads no checkout, so no result here is about the current code.
+        status: projectBridgeCheckRun(run, null).status,
+        outcome: bridgeCheckOutcome(run),
+        exit_code: run.exitCode,
+        at: run.endedAt,
+      })),
+    }))
+}
+
+/**
+ * Saves the checks the owner chose for one allowed project. Every recorded
+ * run of a definition that is no longer configured is flagged, so an old
+ * pass never reads as the configured check again.
+ */
+export function setBridgeProjectChecks(projectId: string, checks: unknown): void {
+  const policy = getBridgeProjectPolicy(projectId)
+  if (!policy) throw new Error('That project is not on the bridge allowlist.')
+  const next = parseBridgeCheckDefinitions(checks)
+  const { revision: _revision, updated_at: _updatedAt, ...base } = policy
+  saveBridgeProjectPolicy({ ...base, checks: next })
+  flagBridgeCheckDefinitionsChanged(projectId, next.map(bridgeCheckDefinitionHash))
+  log.info('bridge project checks saved', { projectId, count: next.length })
 }
 
 /** Takes a project off the allowlist by id, with no folder lookup. */

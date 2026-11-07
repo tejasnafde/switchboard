@@ -100,8 +100,10 @@ export interface LabsRowCopy {
   where: string
   /** The second part, for a row whose flag does not say when a change applies. */
   when?: string
-  /** The paragraphs behind More. */
+  /** The bullets behind the disclosure. */
   more: readonly string[]
+  /** What the closed disclosure is called, when "More" is too vague. */
+  moreLabel?: string
 }
 
 const APPLIES_TEXT = {
@@ -474,15 +476,16 @@ const ROWS = {
     'instinct_bridge',
     'Assistant',
     'Instinct bridge',
-    'Lets your Instinct assistant find, start, message and stop chats in the projects you allow on this desktop.',
+    'Lets your Instinct assistant start, message and stop chats in the projects you allow here.',
     {
-      warning: 'Instinct acts as you in the allowed projects. Its chats can edit files and run commands there.',
+      warning: 'Instinct then acts as you: its chats can edit files and run commands in those projects.',
       where: 'Desktop only',
+      moreLabel: 'How it works',
       more: [
-        'Choose the allowed projects in the list under this section. Local agents get read tools for their chats (list_projects, list_recent_chats, search_chats, read_chat).',
-        'Enroll this Mac under the project list to connect it to the bridge relay. The relay then lists the allowed projects to Instinct, without their folders. Instinct cannot start or send work through the relay yet.',
-        'No project is allowed until you choose it. Commit, push and pull requests stay off unless you turn them on for a project. Merge and deploy stay off.',
-        'Off blocks new bridge work. Status and Stop still work for chats the bridge started.',
+        'You tick the projects. Nothing is allowed until you do.',
+        'You enroll this Mac, so the relay can reach it. It sends project names, never folder paths.',
+        'Instinct can then find, open, message and stop chats in those projects, as you.',
+        'Off refuses new bridge work. Stop and status keep working for chats it already started.',
       ],
     },
   ),

@@ -318,6 +318,7 @@ object RemoteDecoders {
                 worktreeBranch = session.string("worktreeBranch"),
                 settledAt = session.long("settledAt"),
                 snooze = ChatSnooze.stateOf(session),
+                bridgeOrigin = BridgeOrigin.of(session.values["bridgeOrigin"]),
             )
         },
         workspaceId = raw.string("workspaceId"),

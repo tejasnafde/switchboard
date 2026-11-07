@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.Search
 import app.switchboard.mobile.domain.remote.AcpAgents
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
+import app.switchboard.mobile.ui.components.AgentMark
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.Green
@@ -455,14 +456,20 @@ private fun ConversationRow(
 ) {
     ListItem(
         headlineContent = { Text(row.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = {
-            Text(
-                BrowseRowPolicy.conversationSupportingLabel(row),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        // A chat with no activity cue and an agent its mark already names has
+        // nothing to say on a second line, so it gets none.
+        supportingContent = BrowseRowPolicy.conversationSupportingLabel(row)
+            .takeIf(String::isNotBlank)
+            ?.let { label -> { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+        leadingContent = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ActivityDot(BrowseVisualPolicy.activityTone(row.status, row.unread, row.attention))
+                AgentMark(BrowseRowPolicy.conversationMarkAgent(row), tint = TextDim)
+            }
         },
-        leadingContent = { ActivityDot(BrowseVisualPolicy.activityTone(row.status, row.unread, row.attention)) },
         trailingContent = {
             Column(horizontalAlignment = Alignment.End) {
                 Text(

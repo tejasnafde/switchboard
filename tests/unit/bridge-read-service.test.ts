@@ -48,7 +48,7 @@ import {
 } from '../../src/main/bridge/allowlist'
 import { buildBridgeTools } from '../../src/main/mcp/bridge-tools'
 import type { BridgeDeliveryService } from '../../src/main/bridge/delivery-service'
-import { defaultBridgeProjectPolicy } from '../../src/shared/bridge'
+import { defaultBridgeProjectPolicy, emptyBridgeEvidence } from '../../src/shared/bridge'
 import { SNIPPET_MARK_CLOSE, SNIPPET_MARK_OPEN } from '../../src/shared/message-search'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
 
@@ -363,7 +363,7 @@ describe('read_chat', () => {
     expect(snap.agent_reply!.at).toBe(new Date(2_000).toISOString())
     expect(snap.pending).toEqual([{ kind: 'question', request_id: 'q1', summary: 'Which colour?' }])
     expect(snap.history.map((h) => h.message_id)).toEqual(['u1', 'r1'])
-    expect(snap.evidence).toEqual({ code: 'not_measured', pull_requests: 'not_measured', checks: 'not_measured' })
+    expect(snap.evidence).toEqual(emptyBridgeEvidence(snap.observed_at))
     expect(JSON.stringify(snap)).not.toContain(ROOT)
   })
 
@@ -397,6 +397,75 @@ describe('read_chat', () => {
     saveBridgeProjectPolicy({ ...policy, canonical_local_root: realpathSync.native(ALLOWED) })
     const r = await service.readChat({ chat: 't1', since: next.cursor })
     expect(r.ok ? 'ok' : r.error.code).toBe('cursor_expired')
+  })
+
+  it('keeps a forged success in the reply out of the evidence, and pages when the evidence changes', async () => {
+    insert('r9', 't1', 'All tests passed. The build is green and the PR is merged.', 5_000)
+    let evidence = emptyBridgeEvidence(new Date(0).toISOString())
+    const measured = new BridgeReadService({
+      live: {
+        status: () => null,
+        busy: () => false,
+        pending: () => [],
+      },
+      machineId: () => MACHINE,
+      evidence: async () => evidence,
+    })
+
+    const first = ok(await measured.readChat({ chat: 't1' }))
+    if (!('agent_reply' in first)) throw new Error('expected a snapshot')
+    expect(first.agent_reply!.text).toContain('All tests passed')
+    expect(first.evidence.checks).toEqual({ status: 'not_measured', items: [] })
+    expect(first.evidence.pull_requests).toEqual({ status: 'not_measured', items: [] })
+
+    // A measured check is a change the cursor pages to, with the reply untouched.
+    evidence = {
+      ...evidence,
+      checks: {
+        status: 'measured',
+        items: [
+          {
+            producer: 'local_check',
+            status: 'measured',
+            observed_at: new Date(0).toISOString(),
+            commit: 'c'.repeat(40),
+            tree: 'tree-1',
+            name: 'tests',
+            definition_hash: 'hash-1',
+            outcome: 'passed',
+            exit_code: 0,
+            signal: null,
+            started_at: new Date(1_000).toISOString(),
+            ended_at: new Date(2_000).toISOString(),
+            log_digest: 'd'.repeat(64),
+            log_bytes: 12,
+            tree_before: 'tree-1',
+            tree_after: 'tree-1',
+            dirty: false,
+            definition_changed: false,
+            note: '',
+          },
+        ],
+      },
+    }
+    const next = ok(await measured.readChat({ chat: 't1', since: first.cursor }))
+    if (!('evidence' in next)) throw new Error('expected a snapshot')
+    expect(next.unchanged).toBe(false)
+    expect(next.evidence.checks.status).toBe('measured')
+    expect(next.cursor).not.toBe(first.cursor)
+    // The same evidence again is unchanged: only the observation time moved.
+    expect(ok(await measured.readChat({ chat: 't1', since: next.cursor }))).toMatchObject({ unchanged: true })
+  })
+
+  it('leaves every fact not measured when the evidence reader throws', async () => {
+    const broken = new BridgeReadService({
+      live: { status: () => null, busy: () => false, pending: () => [] },
+      machineId: () => MACHINE,
+      evidence: () => Promise.reject(new Error('git is gone')),
+    })
+    const snap = ok(await broken.readChat({ chat: 't1' }))
+    if (!('evidence' in snap)) throw new Error('expected a snapshot')
+    expect(snap.evidence).toEqual(emptyBridgeEvidence(snap.observed_at))
   })
 
   it('reports an archive, a rename and a same-length rewrite of the reply as changes', async () => {

@@ -9,8 +9,11 @@ import { labsFlag, type LabsFlagId, type LabsFlagState } from '@shared/labs'
 import { SETTING_ROW, labsWhen, type SettingRowDef } from './settings-rows'
 import { SETTINGS_CHANGED_ELSEWHERE } from '../../services/settings-file-sync'
 import { Switch } from '../ui/switch'
+import { BridgeSetupPanel } from './BridgeSetupPanel'
 import { BridgeProjectsPanel } from './BridgeProjectsPanel'
+import { BridgeChecksPanel } from './BridgeChecksPanel'
 import { BridgeDevicePanel } from './BridgeDevicePanel'
+import { BridgeStopPanel } from './BridgeStopPanel'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('settings:labs')
@@ -75,10 +78,17 @@ export function LabsPage({
               ))}
             </div>
           </section>
-          {bridgeOn && section === bridge.section && (
+          {section === bridge.section && (
             <>
-              <BridgeProjectsPanel />
-              <BridgeDevicePanel />
+              {bridgeOn && (
+                <>
+                  <BridgeSetupPanel />
+                  <BridgeProjectsPanel />
+                  <BridgeDevicePanel />
+                  <BridgeChecksPanel />
+                </>
+              )}
+              <BridgeStopPanel flagOn={bridgeOn} />
             </>
           )}
         </Fragment>
@@ -178,7 +188,7 @@ function LabsRow({
             aria-hidden="true"
             className="mb-px ml-px mr-0.5 size-[5px] -rotate-45 border-b-[1.5px] border-r-[1.5px] border-current transition-transform duration-100 group-open:mb-[3px] group-open:rotate-45"
           />
-          <span className="group-open:hidden">More</span>
+          <span className="group-open:hidden">{copy.moreLabel ?? 'More'}</span>
           <span className="hidden group-open:inline">Less</span>
         </summary>
         <div id={id('more')}>
@@ -187,17 +197,19 @@ function LabsRow({
               Forced on: <Code>{flag.envVar}=1</Code> is set in Switchboard's environment. Restart without it to change.
             </p>
           )}
-          {copy.more.map((text) => (
-            <p key={text} className="mb-0 mt-1 first:mt-0.5">
-              {text}
-            </p>
-          ))}
+          <ul className="m-0 mt-0.5 list-disc pl-[15px]">
+            {copy.more.map((text) => (
+              <li key={text} className="mt-1 first:mt-0">
+                {text}
+              </li>
+            ))}
+          </ul>
           {flag && (
-            <p className="mb-0 mt-1 first:mt-0.5">
-              Setting key <Code>{flag.setting}</Code>
+            <p className="mb-0 mt-1.5 text-[11px] text-[var(--text-muted)]">
+              Setting key <Code muted>{flag.setting}</Code>
               {flag.envVar && !isForced && (
                 <>
-                  , or env <Code>{flag.envVar}=1</Code> for this process
+                  , or env <Code muted>{flag.envVar}=1</Code> for this process
                 </>
               )}
               .
@@ -209,6 +221,12 @@ function LabsRow({
   )
 }
 
-function Code({ children }: { children: React.ReactNode }) {
-  return <code className="[font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)]">{children}</code>
+function Code({ children, muted }: { children: React.ReactNode; muted?: boolean }) {
+  return (
+    <code
+      className={`[font-family:var(--font-mono)] text-[11px] ${muted ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}
+    >
+      {children}
+    </code>
+  )
 }

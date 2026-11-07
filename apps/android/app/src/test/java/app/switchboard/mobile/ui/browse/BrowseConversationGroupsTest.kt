@@ -57,9 +57,9 @@ class BrowseConversationGroupsTest {
 
     @Test
     fun theStatusLineSaysWhatTheChatIsWaitingOn() {
-        assertEquals("Claude · Waiting on your approval", BrowseRowPolicy.conversationSupportingLabel(row(attention = BrowseThreadAttention.Approval)))
-        assertEquals("Claude · Waiting on your answer", BrowseRowPolicy.conversationSupportingLabel(row(attention = BrowseThreadAttention.Input)))
-        assertEquals("Claude · Plan ready for your review", BrowseRowPolicy.conversationSupportingLabel(row(attention = BrowseThreadAttention.Plan)))
+        assertEquals("Waiting on your approval", BrowseRowPolicy.conversationSupportingLabel(row(attention = BrowseThreadAttention.Approval)))
+        assertEquals("Waiting on your answer", BrowseRowPolicy.conversationSupportingLabel(row(attention = BrowseThreadAttention.Input)))
+        assertEquals("Plan ready for your review", BrowseRowPolicy.conversationSupportingLabel(row(attention = BrowseThreadAttention.Plan)))
     }
 
     private fun row(

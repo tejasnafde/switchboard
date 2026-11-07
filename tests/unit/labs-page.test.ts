@@ -11,9 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { LabsFlagState } from '../../src/shared/labs'
+import type { BridgeDeviceStatus } from '../../src/shared/bridge'
 import { LabsPage } from '../../src/renderer/components/settings/LabsPage'
+import { bridgeSetupSteps } from '../../src/renderer/components/settings/bridge-setup-model'
 import { useSettingValues } from '../../src/renderer/components/settings/setting-values'
 import { searchSettingRows } from '../../src/renderer/components/settings/settings-rows'
+import { ConfirmHost } from '../../src/renderer/components/ui/confirm'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -26,6 +29,11 @@ const removeBridgeProject = vi.fn()
 const deviceStatus = vi.fn()
 const enrollDevice = vi.fn()
 const removeDevice = vi.fn()
+const bridgeChecks = vi.fn()
+const setBridgeChecks = vi.fn()
+const stopStatus = vi.fn()
+const stopAll = vi.fn()
+const clearKill = vi.fn()
 const set = vi.fn(async (key: string, value: string) => {
   if (failWrites) throw new Error('refused')
   rows.set(key, value)
@@ -53,8 +61,22 @@ const DEVICE = {
   operator_command: null,
 }
 
+const STOP = {
+  killed: false,
+  stop_generation: 0,
+  kill_pending: false,
+  enrolled: true,
+  last_result: null,
+  active_chats: 0,
+  last_contact_at: null,
+  lease_expires_at: null,
+  clear_command: null,
+}
+
 beforeEach(() => {
   deviceStatus.mockResolvedValue({ ...DEVICE, enabled: false, state: 'off' })
+  bridgeChecks.mockResolvedValue({ enabled: true, projects: [] })
+  stopStatus.mockResolvedValue(STOP)
   rows = new Map()
   forced = []
   failWrites = false
@@ -69,10 +91,15 @@ beforeEach(() => {
         listProjects: bridgeProjects,
         setProjectAllowed,
         removeProject: removeBridgeProject,
+        listChecks: bridgeChecks,
+        setChecks: setBridgeChecks,
         deviceStatus,
         enrollDevice,
         setDeviceLabel: vi.fn(),
         removeDevice,
+        stopStatus,
+        stopAll,
+        clearKill,
       },
     },
     { get: (target, prop) => (prop in target ? target[prop as 'settings'] : anything) },
@@ -91,7 +118,12 @@ afterEach(() => {
 
 function Harness() {
   const { values, set: setValue } = useSettingValues()
-  return createElement(LabsPage, { values, set: setValue, highlight: null })
+  return createElement(
+    'div',
+    null,
+    createElement(LabsPage, { values, set: setValue, highlight: null }),
+    createElement(ConfirmHost),
+  )
 }
 
 async function mount() {
@@ -130,6 +162,44 @@ describe('Labs page', () => {
     expect(box.getAttribute('aria-checked')).toBe('true')
   })
 
+  it('lists the configured checks with what was measured, and adds one as a program and arguments', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
+    const project = {
+      project_id: 'bproj_1',
+      label: 'repo',
+      checks: [{ name: 'tests', program: 'npm', args: ['test'] }],
+      results: [{ name: 'tests', status: 'measured', outcome: 'failed', exit_code: 1, at: 1_700_000_000_000 }],
+    }
+    bridgeChecks.mockResolvedValue({ enabled: true, projects: [project] })
+    setBridgeChecks.mockResolvedValue({ enabled: true, projects: [project] })
+    await mount()
+    const panel = container.querySelector('[data-testid="bridge-checks"]')!
+    expect(panel.textContent).toContain('How a check is measured')
+    expect(panel.textContent).toContain('npm test')
+    expect(panel.textContent).toContain('Failed (exit 1)')
+
+    const field = (label: string) => panel.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!
+    for (const [label, value] of [
+      ['Check name for repo', 'lint'],
+      ['Check program for repo', 'npm'],
+      ['Check arguments for repo', ' run  lint '],
+    ] as const) {
+      const input = field(label)
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      await act(async () => {
+        setter.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const add = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Add')!
+    await act(async () => add.click())
+    expect(setBridgeChecks).toHaveBeenCalledWith('bproj_1', [
+      { name: 'tests', program: 'npm', args: ['test'] },
+      { name: 'lint', program: 'npm', args: ['run', 'lint'] },
+    ])
+  })
+
   it('lists an orphaned bridge project as allowed and removes it by id', async () => {
     const orphan = { path: '/gone', name: 'gone', projectId: 'bproj_2', allowed: true, orphan: true }
     rows.set('labs.instinct_bridge', 'true')
@@ -143,6 +213,69 @@ describe('Labs page', () => {
     await act(async () => box.click())
     expect(removeBridgeProject).toHaveBeenCalledWith('bproj_2')
     expect(setProjectAllowed).not.toHaveBeenCalled()
+  })
+
+  it('searches the projects, counts them and allows every one shown', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    const projects = [
+      { path: '/repo/alpha', name: 'alpha', projectId: 'bproj_1', allowed: false, orphan: false },
+      { path: '/repo/beta', name: 'beta', projectId: 'bproj_2', allowed: false, orphan: false },
+      { path: '/work/gamma', name: 'gamma', projectId: 'bproj_3', allowed: true, orphan: false },
+    ]
+    bridgeProjects.mockResolvedValue({ enabled: true, projects })
+    setProjectAllowed.mockImplementation(async (path: string) => ({
+      enabled: true,
+      projects: projects.map((p) => (p.path === path ? { ...p, allowed: true } : p)),
+    }))
+    await mount()
+    const panel = () => container.querySelector('[data-testid="bridge-projects"]')!
+    const names = () =>
+      [...panel().querySelectorAll('[data-testid="bridge-projects-list"] label')].map((l) => l.textContent)
+    // The allowed project sorts first, and the count names the whole list.
+    expect(names()![0]).toContain('gamma')
+    expect(panel().querySelector('[data-testid="bridge-projects-count"]')!.textContent).toBe('1 of 3 allowed')
+
+    const search = panel().querySelector<HTMLInputElement>('input[aria-label="Search projects"]')!
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    await act(async () => {
+      setter.call(search, '/repo')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(names()).toHaveLength(2)
+    expect(panel().querySelector('[data-testid="bridge-projects-count"]')!.textContent).toBe('1 of 3 allowed · 2 shown')
+
+    const allShown = panel().querySelector<HTMLButtonElement>('#bridge-allow-shown')!
+    await act(async () => allShown.click())
+    await act(async () => {})
+    // Only the two the search shows, and gamma is left as it is.
+    expect(setProjectAllowed.mock.calls.map((c) => c[0])).toEqual(['/repo/alpha', '/repo/beta'])
+  })
+
+  it('never reads an unread or unusable device key as not enrolled', () => {
+    const device = DEVICE as unknown as BridgeDeviceStatus
+    expect(bridgeSetupSteps({ total: 0, allowed: 0, device: null })[2]).toMatchObject({
+      state: 'unknown',
+      detail: 'Could not read the enrollment.',
+    })
+    expect(
+      bridgeSetupSteps({ total: 0, allowed: 0, device: { ...device, enrolled: true, state: 'key_unreadable' } })[2]
+        .detail,
+    ).toContain('cannot be used here')
+  })
+
+  it('shows the setup steps with what this Mac can check', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({
+      enabled: true,
+      projects: [{ path: '/repo', name: 'repo', projectId: 'bproj_1', allowed: true, orphan: false }],
+    })
+    deviceStatus.mockResolvedValue(DEVICE)
+    await mount()
+    const steps = [...container.querySelectorAll('[data-testid="bridge-setup"] li')]
+    expect(steps.map((li) => li.getAttribute('data-step-state'))).toEqual(['done', 'done', 'todo', 'unknown'])
+    expect(steps[1].textContent).toContain('1 of 1 allowed')
+    expect(steps[2].textContent).toContain('No device key yet')
+    expect(steps[3].textContent).toContain('Not checked here')
   })
 
   it('enrolls this Mac and shows the machine id, the operator command and the status', async () => {
@@ -180,15 +313,104 @@ describe('Labs page', () => {
     expect([...panel.querySelectorAll('button')].some((b) => b.textContent === 'Remove enrollment')).toBe(true)
   })
 
+  it('stops all bridge work after the confirm and shows the kill with the operator command', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
+    deviceStatus.mockResolvedValue(DEVICE)
+    stopAll.mockResolvedValue({
+      ...STOP,
+      killed: true,
+      stop_generation: 3,
+      kill_pending: true,
+      last_result: {
+        generation: 3,
+        state: 'unconfirmed',
+        unconfirmed: ['c1'],
+        unconfirmed_titles: ['Fix the header'],
+        stopped: 1,
+        at: 1,
+      },
+      clear_command: 'node scripts/bridge-operator.mjs clear-kill',
+    })
+    await mount()
+    const panel = container.querySelector('[data-testid="bridge-stop"]')!
+    expect(panel.textContent).toContain('can interrupt a turn you started when the bridge steered')
+    expect(panel.querySelector('[data-testid="bridge-stop-killed"]')!.textContent).toBe('Allowed')
+    const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text)!
+    await act(async () => button('Stop all bridge work').click())
+    expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain('Stop all bridge work?')
+    await act(async () => button('Cancel').click())
+    expect(stopAll).not.toHaveBeenCalled()
+    await act(async () => button('Stop all bridge work').click())
+    await act(async () => button('Stop all').click())
+    expect(stopAll).toHaveBeenCalledTimes(1)
+    expect(panel.querySelector('[data-testid="bridge-stop-killed"]')!.textContent).toBe(
+      'Stopped. New bridge work is refused.',
+    )
+    expect(panel.querySelector('[data-testid="bridge-stop-generation"]')!.textContent).toBe(
+      '3 (not sent to the relay yet)',
+    )
+    expect(panel.querySelector('[data-testid="bridge-stop-result"]')!.textContent).toBe(
+      'Not confirmed for: Fix the header',
+    )
+    expect(panel.querySelector('[data-testid="bridge-clear-command"]')!.textContent).toBe(
+      'node scripts/bridge-operator.mjs clear-kill',
+    )
+    expect(button('Allow bridge work again')).toBeUndefined()
+  })
+
+  it('keeps the stop panel with the flag off while a kill is still in force', async () => {
+    stopStatus.mockResolvedValue({ ...STOP, killed: true, stop_generation: 2, enrolled: false })
+    clearKill.mockResolvedValue({ ...STOP, stop_generation: 2, enrolled: false })
+    await mount()
+    expect(rows.get('labs.instinct_bridge')).toBeUndefined()
+    // The flag refuses new bridge work; it must not hide the only control that clears the kill.
+    expect(container.querySelector('[data-testid="bridge-device"]')).toBeNull()
+    expect(container.querySelector('[data-testid="bridge-stop-killed"]')!.textContent).toBe(
+      'Stopped. New bridge work is refused.',
+    )
+    const allow = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Allow bridge work again')!
+    await act(async () => allow.click())
+    expect(clearKill).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the stop panel with the flag off on a Mac that never ran bridge work', async () => {
+    stopStatus.mockResolvedValue({ ...STOP, enrolled: false })
+    await mount()
+    expect(container.querySelector('[data-testid="bridge-stop"]')).toBeNull()
+  })
+
+  it('keeps the stop panel with the flag off while a bridge chat is still active', async () => {
+    stopStatus.mockResolvedValue({ ...STOP, enrolled: false, active_chats: 1 })
+    await mount()
+    expect(container.querySelector('[data-testid="bridge-stop"]')).not.toBeNull()
+  })
+
+  it('clears a kill locally on a Mac that is not enrolled', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
+    deviceStatus.mockResolvedValue(DEVICE)
+    stopStatus.mockResolvedValue({ ...STOP, killed: true, stop_generation: 1, enrolled: false })
+    clearKill.mockResolvedValue({ ...STOP, stop_generation: 1, enrolled: false })
+    await mount()
+    const allow = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Allow bridge work again')!
+    await act(async () => allow.click())
+    expect(clearKill).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[data-testid="bridge-stop-killed"]')!.textContent).toBe('Allowed')
+  })
+
   it('clears a failed status read at the next good poll', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     try {
       rows.set('labs.instinct_bridge', 'true')
       bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
-      deviceStatus.mockRejectedValueOnce(new Error('backend gone')).mockResolvedValue(DEVICE)
+      // Every caller of the status fails, not only the first: the setup
+      // checklist reads it too.
+      deviceStatus.mockRejectedValue(new Error('backend gone'))
       await mount()
       const panel = () => container.querySelector('[data-testid="bridge-device"]')!
       expect(panel().querySelector('[role="alert"]')!.textContent).toBe('Could not read the enrollment.')
+      deviceStatus.mockResolvedValue(DEVICE)
       await act(async () => vi.advanceTimersByTimeAsync(2_000))
       expect(panel().querySelector('[role="alert"]')).toBeNull()
     } finally {
@@ -203,7 +425,8 @@ describe('Labs page', () => {
     expect(toggle('labsInfo.phoneLivePages')).toBeNull()
     expect(row('labsInfo.phoneLivePages').textContent).toContain('Set on each phone')
     expect(row('labsInfo.snooze').textContent).toContain('Always on')
-    expect(container.querySelectorAll('details')).toHaveLength(10)
+    // One per labs row, plus the stop panel's Relay details.
+    expect(container.querySelectorAll('details')).toHaveLength(11)
   })
 
   it('saves a switch to its labs row and shows it after a reload', async () => {

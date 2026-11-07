@@ -2,10 +2,12 @@
  * The bridge's owner delivery on a real migrated database and the real
  * durable atomic user-turn acceptance, with a fake registry host: start,
  * send and stop, idempotent replay and conflict, the mode cap, agent and
- * model choices, queue and steer fallback (compaction, an ACP agent),
+ * model choices, an agent the project stops allowing mid-call, queue and
+ * steer fallback (compaction, an ACP agent),
  * dormant and rotated chats, archived and child chats, the one active
- * bridge group, stop during a start, and a crash after the provider took the
- * turn (the retry finds the same message id and sends nothing).
+ * bridge group, stop during a start, a stop that kills the chat's measured
+ * check, and a crash after the provider took the turn (the retry finds the
+ * same message id and sends nothing).
  */
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -30,41 +32,40 @@ vi.mock('../../src/main/conversations/history', async () => {
 import {
   addProject,
   archiveConversation,
+  bridgeCheckOutcome,
   createConversation,
   getBridgeCall,
   getBridgeOrigin,
+  readBridgeStopRecord,
+  recordBridgeOrigin,
+  writeBridgeStopRecord,
   getConversationById,
   getConversationProviderInstanceId,
   getConversationRuntimeMode,
   getDb,
   getMessagesForConversation,
+  listBridgeCheckRuns,
   listBridgeProjectPolicies,
+  projectBridgeCheckRun,
   recordThreadSession,
   resolveRootThreadId,
   saveBridgeProjectPolicy,
   setConversationRuntimeMode,
   setConversationWorktree,
 } from '../../src/main/db/database'
-import { SqliteTurnAcceptanceStore } from '../../src/main/db/turn-acceptance'
-import { AtomicUserTurnSubmission } from '../../src/main/provider/durable-turn-acceptance'
 import { setBridgeProjectAllowed } from '../../src/main/bridge/allowlist'
+import {
+  BridgeCheckService,
+  setBridgeCheckService,
+  type BridgeCheckProcessResult,
+} from '../../src/main/bridge/check-service'
 import { BridgeReadService } from '../../src/main/bridge/read-service'
-import {
-  BridgeDeliveryService,
-  type BridgeCaller,
-  type BridgeDeliveryHost,
-} from '../../src/main/bridge/delivery-service'
+import { BridgeDeliveryService, type BridgeCaller } from '../../src/main/bridge/delivery-service'
+import { FakeHost } from './helpers/bridge-delivery-host'
 import { buildBridgeTools } from '../../src/main/mcp/bridge-tools'
-import type { SessionStartOpts } from '../../src/main/provider/types'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
-import {
-  SESSION_START_STOPPED,
-  type RuntimeMode,
-  type UserTurnSubmissionResult,
-  type UserTurnSubmissionV1,
-} from '../../src/shared/provider-events'
-import type { QueuedTurnSummary } from '../../src/shared/turn-delivery'
-import type { AgentType } from '../../src/shared/types'
+import { SESSION_START_STOPPED, type RuntimeMode } from '../../src/shared/provider-events'
+import type { StoredBridgeProjectPolicy } from '../../src/shared/bridge'
 
 const MACHINE = 'hub-test-machine'
 const ROOT = mkdtempSync(join(tmpdir(), 'sb-bridge-delivery-'))
@@ -74,94 +75,12 @@ const OTHER = join(ROOT, 'other')
 mkdirSync(ALLOWED, { recursive: true })
 mkdirSync(OTHER, { recursive: true })
 
-interface LiveChat {
-  provider: string
-  midTurn: boolean
-  steerBlocked: boolean
-}
-
-class FakeHost implements BridgeDeliveryHost {
-  flag = true
-  live = new Map<string, LiveChat>()
-  busyChats = new Set<string>()
-  /** Owes a turn only for messages held in its queue: busy, but not running. */
-  heldOnly = new Set<string>()
-  startingThreads = new Set<string>()
-  openChildren = new Set<string>()
-  pending = new Map<string, PendingBlockingEvent[]>()
-  queued = new Map<string, QueuedTurnSummary[]>()
-  starts: SessionStartOpts[] = []
-  dispatched: UserTurnSubmissionV1[] = []
-  interrupts: string[] = []
-  cancelled: string[] = []
-  /** Runs instead of the default start. */
-  onStart: ((opts: SessionStartOpts) => Promise<void>) | null = null
-  /** The provider takes the turn, then the process "dies" before the answer. */
-  dieAfterDispatch = false
-  /** False while the provider has not taken the turn yet: a Stop then does nothing. */
-  interruptLands = true
-  instanceId = 'claude-code-work'
-  private readonly atomic = new AtomicUserTurnSubmission({
-    store: new SqliteTurnAcceptanceStore(() => getDb()),
-    publish: () => {},
-  })
-
-  enabled = () => this.flag
-  machineId = () => MACHINE
-  liveThread = (chatId: string) => {
-    if (this.live.has(chatId)) return chatId
-    const root = resolveRootThreadId(chatId)
-    for (const id of this.live.keys()) if (resolveRootThreadId(id) === root) return id
-    return null
-  }
-  starting = (threadId: string) => this.startingThreads.has(threadId)
-  startSession = async (opts: SessionStartOpts) => {
-    this.starts.push(opts)
-    if (this.onStart) await this.onStart(opts)
-    else this.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
-    return { instanceId: this.instanceId }
-  }
-  submitTurn = async (input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> => {
-    const result = await this.atomic.submit(input, {
-      clientScope: 'test-scope',
-      conversationId: resolveRootThreadId(input.threadId),
-      prepare: async () => {},
-      dispatch: async (turn) => {
-        this.dispatched.push(turn)
-      },
-    })
-    if (this.dieAfterDispatch) throw new Error('backend died')
-    return result
-  }
-  provider = (threadId: string) => this.live.get(threadId)?.provider ?? null
-  midTurn = (threadId: string) => this.live.get(threadId)?.midTurn ?? false
-  steerBlocked = (threadId: string) => this.live.get(threadId)?.steerBlocked ?? false
-  busy = (chatId: string) =>
-    this.busyChats.has(resolveRootThreadId(chatId)) || this.heldOnly.has(resolveRootThreadId(chatId))
-  running = (chatId: string) => this.busyChats.has(resolveRootThreadId(chatId))
-  chatMode = (chatId: string) => (getConversationRuntimeMode(resolveRootThreadId(chatId)) ?? 'sandbox') as RuntimeMode
-  isOpenChild = (chatId: string) => this.openChildren.has(resolveRootThreadId(chatId))
-  agentAvailable = async (agent: AgentType) => agent !== 'gemini'
-  interrupt = async (threadId: string) => {
-    this.interrupts.push(threadId)
-    if (this.interruptLands) this.busyChats.delete(resolveRootThreadId(threadId))
-  }
-  queuedTurns = (threadId: string) => this.queued.get(threadId) ?? []
-  cancelQueuedTurn = async (threadId: string, messageId: string) => {
-    this.cancelled.push(messageId)
-    const turn = this.queuedTurns(threadId).find((q) => q.messageId === messageId)!
-    this.queued.set(
-      threadId,
-      this.queuedTurns(threadId).filter((q) => q.messageId !== messageId),
-    )
-    return { ok: true as const, turn }
-  }
-}
-
 let host: FakeHost
 let reads: BridgeReadService
 let delivery: BridgeDeliveryService
 const agent = (mode: RuntimeMode = 'full-access'): BridgeCaller => ({ kind: 'local-agent', chatId: 'caller', mode })
+/** The relay's caller: no chat, no mode of its own, and the call id the relay reserved. */
+const owner = (callId: string): BridgeCaller => ({ kind: 'owner', callId })
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string } & Record<string, unknown> }
 const ok = <T>(r: Result<T>): T => {
@@ -191,9 +110,40 @@ function idleChat(id: string, provider = 'claude', mode: RuntimeMode = 'auto') {
   host.live.set(id, { provider, midTurn: false, steerBlocked: false })
 }
 
+/** The allowed project with one configured check, as the local check service reads it. */
+function checkedPolicy(): StoredBridgeProjectPolicy {
+  const [policy] = listBridgeProjectPolicies()
+  return saveBridgeProjectPolicy({ ...policy, checks: [{ name: 'tests', program: 'npm', args: ['test'] }] })
+}
+
+const exited0 = (): BridgeCheckProcessResult => ({
+  code: 0,
+  signal: null,
+  output: 'ok\n',
+  bytes: 3,
+  failedToStart: false,
+  timedOut: false,
+})
+
+/** The real check service on the test database, with the child process as a seam. */
+function checkService(
+  policy: StoredBridgeProjectPolicy,
+  run: (signal: AbortSignal) => Promise<BridgeCheckProcessResult>,
+): BridgeCheckService {
+  return new BridgeCheckService({
+    enabled: () => true,
+    allowed: () => [{ policy, paths: [ALLOWED], sidebarPath: ALLOWED }],
+    now: () => 9_000,
+    settleMs: 0,
+    facts: async () => ({ head: 'c'.repeat(40), branch: 'main', tree: 'tree-1', dirty: false }),
+    run: (input) => run(input.signal),
+  })
+}
+
 beforeEach(() => {
   createMigratedDb()
-  host = new FakeHost()
+  setBridgeCheckService(null)
+  host = new FakeHost(MACHINE)
   reads = new BridgeReadService({
     machineId: () => MACHINE,
     live: { status: () => null, busy: (id) => host.busy(id), pending: (id) => host.pending.get(id) ?? [] },
@@ -227,6 +177,32 @@ describe('start_chat', () => {
     expect(getConversationProviderInstanceId(receipt.chat.chat_id)).toBe('claude-code-work')
   })
 
+  it('records the baseline before the turn can write it, never beside it', async () => {
+    const order: string[] = []
+    setBridgeCheckService(
+      new BridgeCheckService({
+        enabled: () => true,
+        allowed: () => [],
+        now: () => 7_000,
+        facts: async () => {
+          // A snapshot of a big checkout takes a while; the turn must wait for it.
+          await new Promise((done) => setTimeout(done, 5))
+          order.push('baseline')
+          return { head: 'c'.repeat(40), branch: 'main', tree: 'tree-1', dirty: false }
+        },
+      }),
+    )
+    host.onStart = async (opts) => {
+      order.push('session')
+      host.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+    }
+    const receipt = ok(await start())
+    setBridgeCheckService(null)
+    expect(order).toEqual(['baseline', 'session'])
+    expect(getBridgeOrigin(receipt.chat.chat_id)).toMatchObject({ baselineTree: 'tree-1', baselineAt: 7_000 })
+    expect(host.dispatched).toHaveLength(1)
+  })
+
   it('replays the same key and body, refuses a changed body, and never sends twice', async () => {
     const args = { project: 'Raves site', message: 'Fix the header', idempotency_key: 'same' }
     const first = ok(await delivery.startChat(agent(), args))
@@ -238,7 +214,7 @@ describe('start_chat', () => {
       call_id: first.call_id,
     })
     // Another chat's key is its own.
-    const other = ok(await delivery.startChat({ ...agent(), chatId: 'caller-2' }, args))
+    const other = ok(await delivery.startChat({ kind: 'local-agent', chatId: 'caller-2', mode: 'full-access' }, args))
     expect(other.call_id).not.toBe(first.call_id)
   })
 
@@ -288,6 +264,31 @@ describe('start_chat', () => {
       setBridgeProjectAllowed(ALLOWED, false, MACHINE)
     }
     expect(err(await start())).toMatchObject({ code: 'project_not_allowed', non_delivery_confirmed: true })
+    expect(host.dispatched).toHaveLength(0)
+  })
+
+  it('reads the allowed agents again after the availability probe and after the start', async () => {
+    const narrow = () => {
+      const [policy] = listBridgeProjectPolicies()
+      saveBridgeProjectPolicy({ ...policy, allowed_agents: ['codex'] })
+    }
+    // The owner unchecks claude-code while the availability probe is awaited.
+    host.agentAvailable = async (a) => {
+      narrow()
+      return a !== 'gemini'
+    }
+    expect(err(await start())).toMatchObject({ code: 'agent_unavailable', agent_choices: ['codex'] })
+    expect(host.starts).toHaveLength(0)
+
+    host.agentAvailable = async (a) => a !== 'gemini'
+    const [policy] = listBridgeProjectPolicies()
+    saveBridgeProjectPolicy({ ...policy, allowed_agents: ['claude-code', 'codex'] })
+    // And while the session starts, before the first turn goes in.
+    host.onStart = async (opts) => {
+      host.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+      narrow()
+    }
+    expect(err(await start())).toMatchObject({ code: 'agent_unavailable', non_delivery_confirmed: true })
     expect(host.dispatched).toHaveLength(0)
   })
 
@@ -400,6 +401,15 @@ describe('send_to_chat', () => {
     expect(host.dispatched[0]).toMatchObject({ threadId: 'c1', delivery: 'queue', providerText: 'Next' })
     expect(host.dispatched[0].runtimeMode).toBeUndefined()
     expect(getBridgeOrigin('c1')?.callId).toBe(receipt.call_id)
+  })
+
+  it('stamps each origin with the source of its caller, which is what the control lease stops', async () => {
+    idleChat('c1')
+    ok(await delivery.sendToChat(agent(), { chat: 'c1', message: 'Next', idempotency_key: key() }))
+    expect(getBridgeOrigin('c1')?.source).toBe('local')
+    const started = ok(await start({ idempotency_key: 'oc1' }, owner('bcall_oc1')))
+    expect(getBridgeOrigin(started.chat.chat_id)?.source).toBe('relay')
+    expect(started.call_id).toBe('bcall_oc1')
   })
 
   it('steers only when asked, supported and not compacting; otherwise queues', async () => {
@@ -540,6 +550,35 @@ describe('send_to_chat', () => {
     expect(host.dispatched).toHaveLength(0)
   })
 
+  it('refuses a chat whose agent the project does not allow, before the resume and after it', async () => {
+    const [policy] = listBridgeProjectPolicies()
+    saveBridgeProjectPolicy({ ...policy, allowed_agents: ['codex'] })
+    idleChat('c1')
+    expect(err(await delivery.sendToChat(agent(), { chat: 'c1', message: 'x', idempotency_key: key() }))).toMatchObject(
+      {
+        code: 'agent_unavailable',
+        agent_choices: ['codex'],
+      },
+    )
+    expect(host.starts).toHaveLength(0)
+
+    // Allowed when the resume starts, taken off the project while it runs.
+    saveBridgeProjectPolicy({ ...policy, allowed_agents: ['claude-code', 'codex'] })
+    createConversation('d1', ALLOWED, 'claude-code')
+    setConversationRuntimeMode('d1', 'auto')
+    host.onStart = async (opts) => {
+      host.live.set(opts.threadId, { provider: 'claude', midTurn: false, steerBlocked: false })
+      saveBridgeProjectPolicy({ ...policy, allowed_agents: ['codex'] })
+    }
+    expect(err(await delivery.sendToChat(agent(), { chat: 'd1', message: 'x', idempotency_key: key() }))).toMatchObject(
+      {
+        code: 'agent_unavailable',
+        non_delivery_confirmed: true,
+      },
+    )
+    expect(host.dispatched).toHaveLength(0)
+  })
+
   it('refuses an open hub child as the caller, and keeps a rejection reason out of the answer', async () => {
     idleChat('c1')
     host.openChildren.add('caller')
@@ -639,6 +678,69 @@ describe('stop_chat', () => {
     expect(err(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).code).toBe('stop_unconfirmed')
   })
 
+  it("kills the chat's running check, records it cancelled, and never lets it report a pass", async () => {
+    idleChat('c1')
+    const policy = checkedPolicy()
+    recordBridgeOrigin({
+      conversationId: 'c1',
+      callId: 'bcall_1',
+      projectId: policy.project_id,
+      machineId: MACHINE,
+      policyRevision: policy.revision,
+      source: 'relay',
+    })
+    let childStarted = () => {}
+    const started = new Promise<void>((done) => {
+      childStarted = done
+    })
+    const checks = checkService(policy, (signal) => {
+      childStarted()
+      // A long check: the child ends only when the stop kills it, and it would
+      // have exited 0 either way.
+      return new Promise((done) => signal.addEventListener('abort', () => done(exited0()), { once: true }))
+    })
+    setBridgeCheckService(checks)
+    const scheduled = checks.onTurnEnded('c1')
+    await started
+    expect(listBridgeCheckRuns('c1')[0].state).toBe('running')
+
+    expect(ok(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).status).toBe('stopped')
+    await scheduled
+    const [recorded] = listBridgeCheckRuns('c1')
+    expect(recorded).toMatchObject({ state: 'cancelled', exitCode: null })
+    // The one rule every surface reads a run by: no measurement, and no pass.
+    expect(bridgeCheckOutcome(recorded)).toBe('not_run')
+    expect(projectBridgeCheckRun(recorded, recorded.treeBefore).status).toBe('not_measured')
+  })
+
+  it('leaves a chat with no running check exactly as it was, and records no run', async () => {
+    idleChat('c1')
+    host.busyChats.add('c1')
+    const policy = checkedPolicy()
+    setBridgeCheckService(checkService(policy, () => Promise.resolve(exited0())))
+    expect(ok(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).status).toBe('stopped')
+    expect(host.interrupts).toEqual(['c1'])
+    expect(listBridgeCheckRuns('c1')).toEqual([])
+  })
+
+  it('is stop_unconfirmed when a running check cannot be recorded as cancelled', async () => {
+    idleChat('c1')
+    const policy = checkedPolicy()
+    recordBridgeOrigin({
+      conversationId: 'c1',
+      callId: 'bcall_2',
+      projectId: policy.project_id,
+      machineId: MACHINE,
+      policyRevision: policy.revision,
+      source: 'relay',
+    })
+    // The child was killed but its row could not be written, so the run is no
+    // longer accounted for: the answer must not claim the chat was stopped.
+    setBridgeCheckService({ cancel: () => false } as unknown as BridgeCheckService)
+    expect(err(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).code).toBe('stop_unconfirmed')
+    expect(getBridgeOrigin('c1')?.stopState).toBe('unconfirmed')
+  })
+
   it('a stop that throws is stop_unconfirmed, never stopped', async () => {
     idleChat('c1')
     host.interrupt = async () => {
@@ -682,5 +784,93 @@ describe('the MCP tools', () => {
       .find((t) => t.name === 'send_to_chat')!
       .call({ chat: 'c', message: 'x', delivery: 'now', idempotency_key: 'k' })
     expect(badDelivery.isError).toBe(true)
+  })
+})
+
+describe('stops of all bridge work', () => {
+  const kill = () =>
+    writeBridgeStopRecord({ generation: readBridgeStopRecord().generation + 1, killed: true, killPending: false })
+
+  function bridgeChat(id: string, source: 'local' | 'relay' = 'local') {
+    idleChat(id)
+    recordBridgeOrigin({
+      conversationId: id,
+      callId: `bcall_${id}`,
+      projectId: 'p',
+      machineId: MACHINE,
+      policyRevision: 1,
+      source,
+    })
+  }
+
+  it('while killed refuses start_chat and send_to_chat with confirmed non-delivery, but reads and stop_chat work', async () => {
+    bridgeChat('c1')
+    kill()
+    const refused = err(await start())
+    expect(refused).toMatchObject({ code: 'killed', non_delivery_confirmed: true, retry: 'ask_owner' })
+    expect(err(await delivery.sendToChat(agent(), { chat: 'c1', message: 'x', idempotency_key: key() }))).toMatchObject(
+      {
+        code: 'killed',
+        non_delivery_confirmed: true,
+      },
+    )
+    expect(host.starts).toEqual([])
+    expect(host.dispatched).toEqual([])
+    expect(ok(reads.listProjects()).projects).toHaveLength(1)
+    expect((await reads.readChat({ chat: 'c1' })).ok).toBe(true)
+    host.busyChats.add('c1')
+    expect(ok(await delivery.stopChat(agent(), { chat: 'c1', idempotency_key: key() })).status).toBe('stopped')
+  })
+
+  it('a kill during a start fences it: the turn is never sent and the call is rejected as killed', async () => {
+    host.onStart = async (opts) => {
+      kill()
+      host.live.set(opts.threadId, { provider: opts.provider, midTurn: false, steerBlocked: false })
+    }
+    const refused = err(await start())
+    expect(refused).toMatchObject({ code: 'killed', non_delivery_confirmed: true })
+    expect(host.dispatched).toEqual([])
+    expect(getBridgeCall(String(refused.call_id))?.state).toBe('rejected')
+  })
+
+  it('stops every active bridge chat, and only those: an unrelated busy chat is untouched', async () => {
+    bridgeChat('b1')
+    bridgeChat('b2')
+    bridgeChat('idle')
+    idleChat('mine')
+    host.busyChats.add('b1')
+    host.busyChats.add('mine')
+    host.queued.set('b2', [{ threadId: 'b2', messageId: 'remote_bridge-bcall_q', text: 'x', queuedAt: 1 }])
+    expect(delivery.activeGroups().sort()).toEqual(['b1', 'b2'])
+    const result = await delivery.stopGroups()
+    expect(result).toEqual({ stopped: ['b1', 'b2'], unconfirmed: [] })
+    expect(host.interrupts.sort()).toEqual(['b1', 'b2'])
+    expect(host.cancelled).toEqual(['remote_bridge-bcall_q'])
+    expect(host.busy('mine')).toBe(true)
+    expect(getBridgeOrigin('b1')?.stopState).toBe('stopped')
+    expect(getBridgeOrigin('idle')?.stopState).toBeNull()
+  })
+
+  it('stops a turn the owner started when the bridge steered into it, and reports one it cannot stop as unconfirmed', async () => {
+    // The owner's turn runs in a chat the bridge sent into: the chat counts as busy.
+    bridgeChat('steered')
+    host.busyChats.add('steered')
+    expect((await delivery.stopGroups()).stopped).toEqual(['steered'])
+    expect(host.busy('steered')).toBe(false)
+
+    host.busyChats.add('steered')
+    host.interruptLands = false
+    expect(await delivery.stopGroups()).toEqual({ stopped: [], unconfirmed: ['steered'] })
+    expect(getBridgeOrigin('steered')?.stopState).toBe('unconfirmed')
+  })
+
+  it('stops only relay-started work when asked for that source', async () => {
+    bridgeChat('local')
+    bridgeChat('relay', 'relay')
+    host.busyChats.add('local')
+    host.busyChats.add('relay')
+    expect(delivery.activeGroups(['relay'])).toEqual(['relay'])
+    expect((await delivery.stopGroups(['relay'])).stopped).toEqual(['relay'])
+    expect(host.busy('local')).toBe(true)
   })
 })

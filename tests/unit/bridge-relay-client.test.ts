@@ -1,13 +1,14 @@
 /**
  * The desktop side of the bridge relay connection: the origin rules, the
- * challenge answer, the catalog (no paths), generation fencing, dropped
- * command frames, backoff, and the link that runs the client only while the
- * flag is on and this installation is enrolled.
+ * challenge answer, the catalog (no paths), generation fencing, running a
+ * command frame and answering it with one result frame, backoff, and the
+ * link that runs the client only while the flag is on and this installation
+ * is enrolled.
  */
 import { createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMigratedDb } from './helpers/test-db'
 
@@ -26,6 +27,7 @@ import {
   RELAY_SOCKET_OPTIONS,
   backoffMs,
   resolveRelayOrigin,
+  type RelayCommandRunner,
   type RelaySocketHandlers,
   type Timers,
 } from '../../src/main/bridge/relay-client'
@@ -33,6 +35,7 @@ import {
   BridgeDeviceLink,
   bridgeCatalog,
   operatorCommand,
+  operatorScriptPath,
   type DeviceLinkDeps,
 } from '../../src/main/bridge/device-link'
 import { defaultDeviceKeyDeps, type DeviceKeyDeps } from '../../src/main/bridge/device-key'
@@ -102,7 +105,7 @@ function fakeTimers() {
   return timers
 }
 
-function harness(catalog: BridgeCatalogProject[] = []) {
+function harness(catalog: BridgeCatalogProject[] = [], onCommand?: RelayCommandRunner) {
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
   const sockets: Array<{
     url: string
@@ -114,6 +117,8 @@ function harness(catalog: BridgeCatalogProject[] = []) {
   }> = []
   const timers = fakeTimers()
   const statuses: string[] = []
+  const controls: unknown[] = []
+  let revoked = 0
   const client = new BridgeRelayClient({
     origin: ORIGIN,
     machineId: MACHINE,
@@ -124,6 +129,9 @@ function harness(catalog: BridgeCatalogProject[] = []) {
     timers,
     random: () => 0.5,
     onStatus: (s) => statuses.push(`${s.state}:${s.code ?? ''}`),
+    onControl: (c) => void controls.push(c),
+    onRevoked: () => void (revoked += 1),
+    onCommand,
     connect: (url, headers, on) => {
       const socket = {
         url,
@@ -153,7 +161,20 @@ function harness(catalog: BridgeCatalogProject[] = []) {
     relay({ type: 'challenge', nonce, wire_version: 1 })
     relay({ type: 'welcome', machine_id: MACHINE, connection_generation: generation, wire_version: 1 })
   }
-  return { client, sockets, last, relay, sent, timers, statuses, publicKey, nonce, connect }
+  return {
+    client,
+    sockets,
+    last,
+    relay,
+    sent,
+    timers,
+    statuses,
+    publicKey,
+    nonce,
+    connect,
+    controls,
+    revoked: () => revoked,
+  }
 }
 
 const PROJECT: BridgeCatalogProject = {
@@ -215,7 +236,7 @@ describe('BridgeRelayClient', () => {
     expect(h.last().closed).toEqual({ code: 4000, reason: 'unsupported_version' })
   })
 
-  it('drops frames for another machine or an older generation, and every command frame', () => {
+  it('drops frames for another machine or an older generation, and a command with no runner', () => {
     const h = harness([PROJECT])
     h.client.start()
     h.connect(3)
@@ -311,6 +332,153 @@ describe('BridgeRelayClient', () => {
   })
 })
 
+// ─── Command frames ─────────────────────────────────────────────
+
+describe('BridgeRelayClient command frames', () => {
+  const dropped = () => logged.filter((l) => l[0] === 'relay frame dropped').map((l) => (l[1] as { code: string }).code)
+  /** Lets the client's then/catch/finally chain run. */
+  const flush = () => new Promise((resolve) => setImmediate(resolve))
+
+  function command(extra: Record<string, unknown> = {}) {
+    return {
+      type: 'command',
+      wire_version: 1,
+      machine_id: MACHINE,
+      connection_generation: 1,
+      call_id: 'relay_call_1',
+      tool: 'read_chat',
+      arguments: {},
+      stop_generation: 0,
+      ...extra,
+    }
+  }
+
+  beforeEach(() => {
+    logged.length = 0
+  })
+
+  it('runs a command once and answers with one result frame on the same connection', async () => {
+    const seen: string[] = []
+    const h = harness([], async (frame) => {
+      seen.push(String(frame.call_id))
+      return { callId: String(frame.call_id), ok: true, result: { status: 'idle' } }
+    })
+    h.client.start()
+    h.connect()
+    const before = h.sent().length
+    h.relay(command())
+    await flush()
+    expect(seen).toEqual(['relay_call_1'])
+    expect(h.sent().slice(before)).toEqual([
+      {
+        type: 'result',
+        machine_id: MACHINE,
+        connection_generation: 1,
+        call_id: 'relay_call_1',
+        ok: true,
+        result: { status: 'idle' },
+      },
+    ])
+  })
+
+  it('sends a refusal as a result frame with the error', async () => {
+    const h = harness([], async (frame) => ({
+      callId: String(frame.call_id),
+      ok: false,
+      error: {
+        code: 'killed',
+        message: 'All bridge work is stopped on this machine.',
+        call_id: String(frame.call_id),
+        retry: 'ask_owner',
+        target: null,
+        delivered: false,
+        non_delivery_confirmed: true,
+      },
+    }))
+    h.client.start()
+    h.connect()
+    h.relay(command())
+    await flush()
+    expect(h.sent().at(-1)).toMatchObject({
+      type: 'result',
+      ok: false,
+      error: { code: 'killed', delivered: false, non_delivery_confirmed: true },
+    })
+  })
+
+  it('never runs a command for another machine, an older generation or a second time while it is running', async () => {
+    let runs = 0
+    let release = () => {}
+    const h = harness([], async (frame) => {
+      runs += 1
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return { callId: String(frame.call_id), ok: true, result: {} }
+    })
+    h.client.start()
+    h.connect(3)
+    h.relay(command({ machine_id: 'hub-other', connection_generation: 3 }))
+    h.relay(command({ connection_generation: 2 }))
+    h.relay(command({ connection_generation: 3 }))
+    h.relay(command({ connection_generation: 3 }))
+    await flush()
+    expect(runs).toBe(1)
+    expect(dropped()).toEqual(['foreign_machine', 'stale_generation', 'duplicate_call'])
+    release()
+    await flush()
+    expect(h.sent().at(-1)).toMatchObject({ call_id: 'relay_call_1', connection_generation: 3 })
+  })
+
+  it('drops an answer that arrives after a reconnect instead of sending it on the new connection', async () => {
+    let release: (() => void) | null = null
+    const h = harness([], async (frame) => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return { callId: String(frame.call_id), ok: true, result: {} }
+    })
+    h.client.start()
+    h.connect()
+    h.relay(command())
+    await flush()
+    h.last().on.onClose(1006, 'dropped')
+    h.timers.advance(5_000)
+    h.connect(2)
+    const before = h.sent().length
+    release!()
+    await flush()
+    expect(h.sent()).toHaveLength(before)
+    expect(dropped()).toContain('stale_connection')
+  })
+
+  it('does nothing when the relay never acks a result, and notes an ack that stored nothing', async () => {
+    let runs = 0
+    const h = harness([], async (frame) => {
+      runs += 1
+      return { callId: String(frame.call_id), ok: true, result: {} }
+    })
+    h.client.start()
+    h.connect()
+    h.relay(command())
+    await flush()
+    // No ack comes. Nothing is resent and the work is not run again; only pings follow.
+    h.timers.advance(200_000)
+    expect(h.sent().filter((f) => f.type === 'result')).toHaveLength(1)
+    expect(runs).toBe(1)
+
+    h.relay({
+      type: 'result_ack',
+      machine_id: MACHINE,
+      connection_generation: 1,
+      call_id: 'relay_call_1',
+      stored: false,
+      reason: 'unknown_call',
+    })
+    expect(logged.some((l) => l[0] === 'the relay did not store a result')).toBe(true)
+  })
+})
+
 // ─── Link ───────────────────────────────────────────────────────
 
 const ROOT = mkdtempSync(join(tmpdir(), 'sb-bridge-link-'))
@@ -345,18 +513,151 @@ function linkHarness(env: NodeJS.ProcessEnv = {}) {
         stop: () => void (record.stopped += 1),
         sendCatalog: () => void (record.catalogs += 1),
         status: () => ({ state: 'connecting' as const, code: null, connectionGeneration: null }),
+        lastContactAt: () => null,
+        sendStopAck: () => false,
+        sendKill: () => false,
       }
     },
   }
   return { link: new BridgeDeviceLink(deps), flag, keychain, clients }
 }
 
+describe('BridgeRelayClient stop controls', () => {
+  beforeEach(() => {
+    logged.length = 0
+  })
+  const dropped = () => logged.filter((l) => l[0] === 'relay frame dropped').map((l) => (l[1] as { code: string }).code)
+
+  it('passes the stop state of the welcome on; an older relay without it passes nothing', () => {
+    const h = harness()
+    h.client.start()
+    expect(h.client.lastContactAt()).toBeNull()
+    h.relay({ type: 'challenge', nonce: h.nonce, wire_version: 1 })
+    h.relay({
+      type: 'welcome',
+      machine_id: MACHINE,
+      connection_generation: 1,
+      wire_version: 1,
+      stop_generation: 4,
+      killed: true,
+    })
+    expect(h.controls).toEqual([{ stop_generation: 4, killed: true }])
+    expect(h.client.lastContactAt()).toBe(0)
+
+    const old = harness()
+    old.client.start()
+    old.connect()
+    expect(old.controls).toEqual([])
+  })
+
+  it('drops a welcome stop state of the wrong type but stays connected', () => {
+    const h = harness()
+    h.client.start()
+    h.relay({ type: 'challenge', nonce: h.nonce, wire_version: 1 })
+    h.relay({
+      type: 'welcome',
+      machine_id: MACHINE,
+      connection_generation: 1,
+      wire_version: 1,
+      stop_generation: '4',
+      killed: true,
+    })
+    expect(h.controls).toEqual([])
+    expect(h.client.status().state).toBe('connected')
+    expect(dropped()).toEqual(['invalid_control'])
+  })
+
+  it('takes a control for this machine and connection only, and drops invalid ones', () => {
+    const h = harness()
+    h.client.start()
+    h.connect(3)
+    const frame = { type: 'control', machine_id: MACHINE, connection_generation: 3 }
+    h.relay({ ...frame, stop_generation: 5, killed: false })
+    h.relay({ ...frame, machine_id: 'hub-other', stop_generation: 6, killed: true })
+    h.relay({ ...frame, connection_generation: 2, stop_generation: 6, killed: true })
+    h.relay({ type: 'control', machine_id: MACHINE, stop_generation: 6, killed: true })
+    h.relay({ ...frame, stop_generation: -1, killed: true })
+    h.relay({ ...frame, stop_generation: 1.5, killed: true })
+    h.relay({ ...frame, stop_generation: 6, killed: 'yes' })
+    expect(h.controls).toEqual([{ stop_generation: 5, killed: false }])
+    expect(dropped()).toEqual([
+      'foreign_machine',
+      'stale_generation',
+      'invalid_control',
+      'invalid_control',
+      'invalid_control',
+      'invalid_control',
+    ])
+  })
+
+  it('drops a control before the welcome', () => {
+    const h = harness()
+    h.client.start()
+    h.relay({ type: 'control', machine_id: MACHINE, connection_generation: 1, stop_generation: 1, killed: true })
+    expect(h.controls).toEqual([])
+    expect(dropped()).toEqual(['not_authenticated'])
+  })
+
+  it('sends stop_ack and kill only on an authenticated connection', () => {
+    const h = harness()
+    h.client.start()
+    expect(h.client.sendKill(1)).toBe(false)
+    h.connect()
+    h.timers.advance(5_000)
+    h.relay({ type: 'pong' })
+    expect(h.client.sendStopAck(2, 'unconfirmed')).toBe(true)
+    expect(h.client.sendKill(3)).toBe(true)
+    expect(h.client.sendKill(-1)).toBe(false)
+    expect(h.sent().slice(-2)).toEqual([
+      { type: 'stop_ack', stop_generation: 2, state: 'unconfirmed' },
+      { type: 'kill', stop_generation: 3 },
+    ])
+    h.relay({ type: 'catalog_accepted' })
+    h.relay({ type: 'control', machine_id: MACHINE, connection_generation: 1, stop_generation: 3, killed: true })
+    expect(h.client.lastContactAt()).toBe(5_000)
+  })
+
+  it('renews the control lease on any frame of this live connection, a pong included', () => {
+    const h = harness()
+    h.client.start()
+    h.connect()
+    expect(h.client.lastContactAt()).toBe(0)
+    // A healthy connection that only exchanges ping and pong is still contact.
+    h.timers.advance(40_000)
+    h.relay({ type: 'pong' })
+    expect(h.client.lastContactAt()).toBe(40_000)
+    h.timers.advance(10_000)
+    h.relay({ type: 'catalog_accepted' })
+    expect(h.client.lastContactAt()).toBe(50_000)
+    // A frame from another machine, or from an older connection, is not contact for this one.
+    h.timers.advance(10_000)
+    h.relay({ type: 'pong', machine_id: 'hub-other' })
+    h.relay({ type: 'control', machine_id: MACHINE, connection_generation: 2, stop_generation: 1, killed: false })
+    expect(h.client.lastContactAt()).toBe(50_000)
+    expect(dropped()).toEqual(['foreign_machine', 'stale_generation'])
+  })
+
+  it('reports a revoked close, and keeps command frames dropped', () => {
+    const h = harness()
+    h.client.start()
+    h.connect()
+    h.relay({ type: 'command', machine_id: MACHINE, connection_generation: 1, name: 'start_chat' })
+    expect(dropped()).toEqual(['commands_disabled'])
+    h.last().on.onClose(4003, 'replaced')
+    expect(h.revoked()).toBe(0)
+    h.timers.advance(400_000)
+    h.connect(2)
+    h.last().on.onClose(4003, 'revoked')
+    expect(h.revoked()).toBe(1)
+  })
+})
+
 describe('BridgeDeviceLink', () => {
   beforeEach(() => {
     createMigratedDb()
   })
 
-  it('runs only while the flag is on and this installation is enrolled', () => {
+  it('runs only while the flag is on and this installation is enrolled', async () => {
     const h = linkHarness()
     h.link.reconcile()
     expect(h.clients).toHaveLength(0)
@@ -366,9 +667,12 @@ describe('BridgeDeviceLink', () => {
     expect(h.clients).toHaveLength(1)
     expect(h.clients[0]).toMatchObject({ started: 1, origin: ORIGIN })
     expect(status).toMatchObject({ enrolled: true, machine_id: MACHINE, label: 'Work Mac', state: 'connecting' })
+    // Absolute here (vitest runs from the checkout), so the command needs no folder.
     expect(status.operator_command).toBe(
-      `echo '${status.public_key}' | node scripts/bridge-operator.mjs enroll '${MACHINE}' 'Work Mac' -`,
+      `echo '${status.public_key}' | node '${operatorScriptPath()}' enroll '${MACHINE}' 'Work Mac' -`,
     )
+    expect(isAbsolute(operatorScriptPath())).toBe(true)
+    expect(operatorScriptPath().endsWith(join('scripts', 'bridge-operator.mjs'))).toBe(true)
 
     h.link.reconcile()
     expect(h.clients).toHaveLength(1)
@@ -380,7 +684,10 @@ describe('BridgeDeviceLink', () => {
     h.link.reconcile()
     expect(h.clients).toHaveLength(2)
     h.link.catalogChanged()
-    expect(h.clients[1].catalogs).toBe(1)
+    h.link.catalogChanged()
+    // Coalesced: a bulk allowlist change saves one project at a time.
+    expect(h.clients[1].catalogs).toBe(0)
+    await vi.waitFor(() => expect(h.clients[1].catalogs).toBe(1))
 
     h.link.removeEnrollment()
     expect(h.clients[1].stopped).toBe(1)
@@ -428,10 +735,23 @@ describe('BridgeDeviceLink', () => {
     expect(bad.link.status()).toMatchObject({ state: 'key_unreadable', code: 'bad_relay_origin', relay_origin: null })
 
     expect(
-      operatorCommand({ origin: 'http://127.0.0.1:8787', machineId: 'hub-1', label: "Tejas's Mac", publicKey: 'AAAA' }),
+      operatorCommand({
+        origin: 'http://127.0.0.1:8787',
+        machineId: 'hub-1',
+        label: "Tejas's Mac",
+        publicKey: 'AAAA',
+        scriptPath: 'scripts/bridge-operator.mjs',
+      }),
     ).toBe(
-      `echo 'AAAA' | BRIDGE_RELAY_ORIGIN='http://127.0.0.1:8787' node scripts/bridge-operator.mjs enroll 'hub-1' 'Tejas'\\''s Mac' -`,
+      `echo 'AAAA' | BRIDGE_RELAY_ORIGIN='http://127.0.0.1:8787' node 'scripts/bridge-operator.mjs' enroll 'hub-1' 'Tejas'\\''s Mac' -`,
     )
+  })
+
+  it('falls back to the relative script path for a packaged build and an unknown root', () => {
+    expect(operatorScriptPath('/Applications/Switchboard.app/Contents/Resources/app.asar')).toBe(
+      'scripts/bridge-operator.mjs',
+    )
+    expect(operatorScriptPath('/nowhere/at/all')).toBe('scripts/bridge-operator.mjs')
   })
 })
 

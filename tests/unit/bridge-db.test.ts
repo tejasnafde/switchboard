@@ -1,15 +1,24 @@
 /**
  * The bridge records on a real migrated database: the call ledger keyed by
  * operation and idempotency key, retirement to tombstones, recovery at start,
- * origins under the root chat id, the stop generation and policy revisions.
+ * origins under the root chat id with their recorded baseline, the stop
+ * generation, policy revisions and the measured check runs.
  */
 import { createHash } from 'crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMigratedDb } from './helpers/test-db'
 import {
-  advanceBridgeStopGeneration,
+  getDb,
+  cancelInterruptedBridgeCheckRuns,
+  cancelRunningBridgeCheckRuns,
+  claimBridgeCheckRun,
+  finishBridgeCheckRun,
+  flagBridgeCheckDefinitionsChanged,
   getBridgeCall,
   getBridgeOrigin,
+  latestBridgeCheckRunsForProject,
+  listBridgeCheckRuns,
+  setBridgeOriginBaseline,
   getBridgeProjectPolicy,
   listBridgeProjectPolicies,
   migrate,
@@ -21,7 +30,9 @@ import {
   retireExpiredBridgeCalls,
   saveBridgeProjectPolicy,
   updateBridgeCallState,
+  writeBridgeStopRecord,
 } from '../../src/main/db/database'
+import { bridgeCheckDefinitionHash } from '../../src/main/db/bridge'
 import { BRIDGE_CALL_RETENTION_MS, bridgeInputHash, defaultBridgeProjectPolicy } from '../../src/shared/bridge'
 
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/switchboard-vitest') } }))
@@ -192,7 +203,7 @@ describe('recovery after a restart', () => {
     updateBridgeCallState(dispatching.call.callId, 'dispatching')
     updateBridgeCallState(accepted.call.callId, 'dispatching')
     updateBridgeCallState(accepted.call.callId, 'accepted')
-    advanceBridgeStopGeneration()
+    writeBridgeStopRecord({ generation: 1, killed: false, killPending: false })
 
     migrate(db)
     expect(recoverBridgeCalls()).toEqual({ rejected: 1, unknown: 1 })
@@ -216,6 +227,7 @@ describe('bridge origins', () => {
       projectId: 'p1',
       machineId: 'mac-work',
       policyRevision: 2,
+      source: 'local',
     })
     expect(origin.conversationId).toBe('agent_1')
     recordThreadSession('claude-uuid-2', 'claude-uuid-1')
@@ -231,6 +243,7 @@ describe('bridge origins', () => {
       projectId: 'p1',
       machineId: 'mac-work',
       policyRevision: 1,
+      source: 'local',
     })
     const second = recordBridgeOrigin({
       conversationId: 'agent_1',
@@ -238,30 +251,30 @@ describe('bridge origins', () => {
       projectId: 'p1',
       machineId: 'mac-work',
       policyRevision: 3,
+      source: 'local',
     })
     expect(second).toEqual(first)
   })
 
   it('stamps the stop generation current at the start', () => {
-    advanceBridgeStopGeneration()
-    advanceBridgeStopGeneration()
+    writeBridgeStopRecord({ generation: 2, killed: false, killPending: false })
     const origin = recordBridgeOrigin({
       conversationId: 'agent_1',
       callId: 'bcall_a',
       projectId: 'p1',
       machineId: 'mac-work',
       policyRevision: 1,
+      source: 'local',
     })
     expect(origin.stopGeneration).toBe(2)
   })
 })
 
 describe('stop generation', () => {
-  it('starts at 0, rises by one or to a relay value, and never goes down', () => {
+  it('starts at 0 and never goes down', () => {
     expect(readBridgeStopGeneration()).toBe(0)
-    expect(advanceBridgeStopGeneration()).toBe(1)
-    expect(advanceBridgeStopGeneration(5)).toBe(5)
-    expect(advanceBridgeStopGeneration(3)).toBe(5)
+    expect(writeBridgeStopRecord({ generation: 5, killed: false, killPending: false }).generation).toBe(5)
+    expect(writeBridgeStopRecord({ generation: 3, killed: false, killPending: false }).generation).toBe(5)
     expect(readBridgeStopGeneration()).toBe(5)
   })
 })
@@ -287,5 +300,136 @@ describe('project policies', () => {
   it('refuses a default mode above the cap', () => {
     expect(() => saveBridgeProjectPolicy({ ...base, default_mode: 'full-access' })).toThrow(/maximum mode/)
     expect(getBridgeProjectPolicy('p1')).toBeNull()
+  })
+})
+
+describe('measured check runs', () => {
+  const claim = (over: Record<string, unknown> = {}) =>
+    claimBridgeCheckRun({
+      conversationId: 'c1',
+      projectId: 'p1',
+      name: 'tests',
+      definitionHash: 'hash-1',
+      cwd: '/Users/me/site',
+      executionRootRevision: 0,
+      commit: 'c'.repeat(40),
+      treeBefore: 'tree-1',
+      dirty: false,
+      definitionChanged: false,
+      now: 1_000,
+      ...over,
+    })
+
+  it('claims one run per chat, definition and source snapshot', () => {
+    const first = claim()
+    expect(first).toMatchObject({ name: 'tests', state: 'running', treeBefore: 'tree-1' })
+    expect(claim()).toBeNull()
+    expect(claim({ treeBefore: 'tree-2' })).not.toBeNull()
+    expect(claim({ definitionHash: 'hash-2' })).not.toBeNull()
+  })
+
+  it('keys a run under the root chat id after a session rotation', () => {
+    claim()
+    recordThreadSession('rotated-1', 'c1')
+    expect(claim({ conversationId: 'rotated-1' })).toBeNull()
+    expect(listBridgeCheckRuns('rotated-1').map((r) => r.treeBefore)).toEqual(['tree-1'])
+  })
+
+  it('writes a result once and leaves a settled row alone', () => {
+    const run = claim()!
+    expect(finishBridgeCheckRun(run.runId, { state: 'finished', exitCode: 0, treeAfter: 'tree-1', now: 2_000 })).toBe(
+      true,
+    )
+    expect(finishBridgeCheckRun(run.runId, { state: 'cancelled', now: 3_000 })).toBe(false)
+    expect(listBridgeCheckRuns('c1')[0]).toMatchObject({ state: 'finished', exitCode: 0, endedAt: 2_000 })
+  })
+
+  it('cancels what is still running on a chat and what an earlier process left', () => {
+    claim()
+    expect(cancelRunningBridgeCheckRuns('c1', 4_000)).toBe(1)
+    expect(listBridgeCheckRuns('c1')[0]).toMatchObject({ state: 'cancelled', endedAt: 4_000 })
+    claim({ treeBefore: 'tree-9' })
+    expect(cancelInterruptedBridgeCheckRuns(5_000)).toBe(1)
+  })
+
+  it('flags every run of a definition the owner no longer configures, and says the list was replaced', () => {
+    const kept = claim()!
+    const dropped = claim({ definitionHash: 'hash-old', name: 'lint' })!
+    expect(flagBridgeCheckDefinitionsChanged('p1', ['hash-1'])).toBe(1)
+    const byName = new Map(listBridgeCheckRuns('c1').map((r) => [r.name, r]))
+    expect(byName.get('tests')!).toMatchObject({ definitionChanged: false, definitionChangedReason: null })
+    expect(byName.get('lint')!).toMatchObject({
+      definitionChanged: true,
+      definitionChangedReason: 'checks_replaced',
+    })
+    expect([kept.runId, dropped.runId]).toHaveLength(2)
+  })
+
+  it('keeps the chat as the reason when the list is replaced after the chat wrote the definition', () => {
+    claim({ definitionHash: 'hash-old', name: 'lint', definitionChanged: true })
+    expect(listBridgeCheckRuns('c1')[0].definitionChangedReason).toBe('chat_edit')
+    expect(flagBridgeCheckDefinitionsChanged('p1', ['hash-1'])).toBe(1)
+    expect(listBridgeCheckRuns('c1')[0].definitionChangedReason).toBe('chat_edit')
+  })
+
+  it('lists the newest run per name for a project', () => {
+    claim()
+    claim({ treeBefore: 'tree-2', now: 9_000 })
+    claim({ name: 'lint', definitionHash: 'hash-2', now: 8_000 })
+    expect(latestBridgeCheckRunsForProject('p1').map((r) => [r.name, r.treeBefore])).toEqual([
+      ['tests', 'tree-2'],
+      ['lint', 'tree-1'],
+    ])
+  })
+
+  it('hashes a definition by its name, program and argument array', () => {
+    const base = { name: 'tests', program: 'npm', args: ['run', 'test'] }
+    expect(bridgeCheckDefinitionHash(base)).toBe(bridgeCheckDefinitionHash({ ...base }))
+    expect(bridgeCheckDefinitionHash(base)).not.toBe(bridgeCheckDefinitionHash({ ...base, args: ['test'] }))
+    expect(bridgeCheckDefinitionHash(base)).not.toBe(bridgeCheckDefinitionHash({ ...base, program: 'pnpm' }))
+  })
+})
+
+describe('the recorded turn baseline', () => {
+  it('is written under the root chat id and starts empty', () => {
+    recordBridgeOrigin({
+      conversationId: 'c1',
+      callId: 'bcall_1',
+      projectId: 'p1',
+      machineId: 'mac-work',
+      policyRevision: 1,
+      source: 'relay',
+    })
+    expect(getBridgeOrigin('c1')).toMatchObject({ baselineTree: null, baselineCommit: null, baselineAt: null })
+    recordThreadSession('rotated-1', 'c1')
+    setBridgeOriginBaseline('rotated-1', { tree: 'tree-1', commit: 'c'.repeat(40), at: 7_000 })
+    expect(getBridgeOrigin('c1')).toMatchObject({
+      baselineTree: 'tree-1',
+      baselineCommit: 'c'.repeat(40),
+      baselineAt: 7_000,
+    })
+  })
+})
+
+describe('policy checks', () => {
+  it('stores the definitions and reads a row from an older build as none', () => {
+    const base = defaultBridgeProjectPolicy({
+      project_id: 'p2',
+      label: 'Site',
+      machine_id: 'mac-work',
+      canonical_local_root: '/Users/me/site',
+    })
+    expect(saveBridgeProjectPolicy(base).checks).toEqual([])
+    const saved = saveBridgeProjectPolicy({
+      ...base,
+      checks: [{ name: 'tests', program: 'npm', args: ['test'] }],
+    })
+    expect(saved.checks).toEqual([{ name: 'tests', program: 'npm', args: ['test'] }])
+    // A row an older build wrote has no checks, and one this build cannot read counts as none.
+    const db = getDb()
+    db.prepare('UPDATE bridge_project_policies SET checks = NULL WHERE project_id = ?').run('p2')
+    expect(getBridgeProjectPolicy('p2')!.checks).toEqual([])
+    db.prepare('UPDATE bridge_project_policies SET checks = ? WHERE project_id = ?').run('not json', 'p2')
+    expect(getBridgeProjectPolicy('p2')!.checks).toEqual([])
   })
 })

@@ -39,6 +39,7 @@ import {
   type ProviderSkill,
 } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
+import { type BranchReadAnswer, BRANCH_READ_WAIT_MS, offerForkIntoWorktree } from '@shared/conversation-fork'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
 import { contextPercent, formatTokens } from '@shared/format'
@@ -155,6 +156,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const key = threadKey(connectionId, threadId)
   const reviewPill = usePrefsStore((s) => s.threads[key]?.reviewPill)
   const thread = useChatStore((s) => s.threads[key]) ?? emptyThread()
+  // The agent's folder: the loaded history's worktree, as the session reattaches, else the route's.
+  const chatCwd =
+    thread.historyMeta?.worktreePath ?? worktreePath ?? thread.historyMeta?.projectPath ?? projectPath ?? null
   const demo = isDemoConnection(connectionId)
   const backendLabel =
     useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ?? (demo ? DEMO_LABEL : 'backend')
@@ -1174,13 +1178,38 @@ export default function ThreadScreen({ route, navigation }: Props) {
           worktreeId: fork.worktreeId ?? undefined,
         })
       }
-      Alert.alert('Fork conversation', 'Choose how to branch from this message.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Fork conversation here', onPress: () => void execute(false).catch(reportError) },
-        { text: 'Fork into a new worktree from current HEAD', onPress: () => void execute(true).catch(reportError) },
-      ])
+      // A folder that is not a git work tree has no HEAD to branch from, so
+      // that choice is left out. The sheet waits for `git:current-branch`,
+      // but never longer than BRANCH_READ_WAIT_MS: a stalled machine must
+      // not hold the sheet back, and the backend refuses what it cannot serve.
+      const readBranch = async (): Promise<BranchReadAnswer | null> => {
+        if (!chatCwd) return null
+        try {
+          return await Promise.race([
+            client.currentBranch(chatCwd),
+            new Promise<null>((resolve) => setTimeout(resolve, BRANCH_READ_WAIT_MS, null)),
+          ])
+        } catch (err) {
+          log.warn('reading the branch before a fork failed', err)
+          return null
+        }
+      }
+      void readBranch().then((read) =>
+        Alert.alert('Fork conversation', 'Choose how to branch from this message.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Fork conversation here', onPress: () => void execute(false).catch(reportError) },
+          ...(offerForkIntoWorktree(read)
+            ? [
+                {
+                  text: 'Fork into a new worktree from current HEAD',
+                  onPress: () => void execute(true).catch(reportError),
+                },
+              ]
+            : []),
+        ]),
+      )
     },
-    [connectionId, navigation, reportError, threadId],
+    [chatCwd, connectionId, navigation, reportError, threadId],
   )
 
   // Held messages only come from a backend that can act on them, but the
@@ -1758,7 +1787,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         onClose={() => setDetailsOpen(false)}
         connectionId={connectionId}
         machine={backendLabel}
-        cwd={thread.historyMeta?.worktreePath ?? worktreePath ?? thread.historyMeta?.projectPath ?? projectPath ?? null}
+        cwd={chatCwd}
         instanceId={effectiveInstanceId ?? defaultInstanceId(toAgentProvider(effectiveProvider))}
         links={prLinks}
         contextUsed={thread.usedTokens != null ? contextPercent(thread.usedTokens, thread.maxTokens) : null}

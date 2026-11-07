@@ -1,41 +1,24 @@
+import { createMigratedDb } from './helpers/test-db'
 import { createHash } from 'node:crypto'
-import Database from 'better-sqlite3'
+import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { canonicalizeForkMessage, type ForkConversationRequest } from '../../src/shared/conversation-fork'
 import type { ChatMessage } from '../../src/shared/types'
 import { ConversationForkCoordinator } from '../../src/main/conversations/conversation-fork-coordinator'
 import type { CanonicalForkMessage } from '../../src/main/conversations/fork-anchor'
 import type { ForkSourceExecution } from '../../src/main/conversations/fork-source'
-import { ensureConversationForkSchema, SqliteConversationForkStore } from '../../src/main/db/conversation-fork'
-
-const databases: Database.Database[] = []
+import { SqliteConversationForkStore } from '../../src/main/db/conversation-fork'
+import { closeDb } from '../../src/main/db/database'
 
 afterEach(() => {
-  while (databases.length > 0) databases.pop()?.close()
+  closeDb()
 })
 
+/** The app's own migrated schema - see the note in conversation-fork-store.test.ts. */
 function database(): Database.Database {
-  const db = new Database(':memory:')
-  databases.push(db)
-  db.pragma('foreign_keys = ON')
+  const db = createMigratedDb()
   db.exec(`
-    CREATE TABLE projects (path TEXT PRIMARY KEY, name TEXT NOT NULL);
-    CREATE TABLE conversations (
-      id TEXT PRIMARY KEY, project_path TEXT NOT NULL, agent_type TEXT NOT NULL,
-      session_id TEXT, title TEXT NOT NULL, created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL, parent_conversation_id TEXT,
-      forked_at_message_id TEXT, worktree_path TEXT, worktree_branch TEXT,
-      worktree_id TEXT, runtime_mode TEXT, model TEXT, provider_instance_id TEXT,
-      pending_handoff_from TEXT, launch_config_name TEXT, sidebar_role TEXT,
-      FOREIGN KEY (project_path) REFERENCES projects(path) ON DELETE CASCADE
-    );
-    CREATE TABLE messages (
-      id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
-      content TEXT NOT NULL DEFAULT '', tool_calls TEXT, images TEXT,
-      timestamp INTEGER NOT NULL, display_body TEXT, pills_meta TEXT,
-      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-    );
-    INSERT INTO projects VALUES ('/repo', 'repo');
+    INSERT INTO projects (path, name) VALUES ('/repo', 'repo');
     INSERT INTO conversations (
       id, project_path, agent_type, session_id, title, created_at, updated_at,
       runtime_mode, model, provider_instance_id, sidebar_role
@@ -44,7 +27,6 @@ function database(): Database.Database {
       'accept-edits', 'gpt-5', 'codex-work', 'managed'
     );
   `)
-  ensureConversationForkSchema(db)
   return db
 }
 

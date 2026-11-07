@@ -3,23 +3,26 @@
  * read_chat over the chats of the projects the owner allowed on this desktop.
  *
  * One typed service. The local MCP wrapper (`mcp/bridge-tools.ts`) calls it
- * for an agent thread; the relay endpoint will call the same methods for the
- * owner. Every read is scoped to the allowlist before any ranking or limit,
- * reads chats under their root id (`resolveRootThreadId`), masks text through
- * the stored-secret paths and never returns a local path.
+ * for an agent thread, and the relay's dispatcher (`bridge/command-dispatch.ts`)
+ * calls the same methods for the owner. Every read is scoped to the allowlist
+ * before any ranking or limit, reads chats under their root id
+ * (`resolveRootThreadId`), masks text through the stored-secret paths and
+ * never returns a local path.
  *
  * Only this desktop answers for now, so lists are never partial and name no
- * unavailable machine. Evidence is `not_measured` until the measured-check
- * service exists.
+ * unavailable machine. `agent_reply` is what the agent said; `evidence`
+ * (`bridge/evidence.ts`) is what this desktop observed itself, and the
+ * cursor covers it, so a new measured fact is a change the owner can page to.
  */
 import { createHash, randomUUID } from 'node:crypto'
 import {
   bridgeError,
+  emptyBridgeEvidence,
   publicProjectView,
   type BridgeChatRef,
   type BridgeChatWorkState,
   type BridgeError,
-  type BridgeEvidenceStatus,
+  type BridgeEvidence,
 } from '@shared/bridge'
 import { MESSAGE_SEARCH_LIMIT, SNIPPET_MARK_CLOSE, SNIPPET_MARK_OPEN } from '@shared/message-search'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
@@ -80,6 +83,8 @@ export interface BridgeReadDeps {
   live: BridgeLiveState
   /** This desktop's stable machine id. */
   machineId: () => string
+  /** Measured facts about the chat's checkout, pull requests and checks. Omitted: everything is `not_measured`. */
+  evidence?: (chatId: string) => Promise<BridgeEvidence>
   now?: () => number
 }
 
@@ -148,7 +153,8 @@ export interface BridgeChatSnapshot extends ResultBase {
   history_reset: boolean
   queued_bridge_messages: never[]
   call_receipts: never[]
-  evidence: { code: BridgeEvidenceStatus; pull_requests: BridgeEvidenceStatus; checks: BridgeEvidenceStatus }
+  /** What this desktop observed, separate from `agent_reply`. Never the agent's own claim. */
+  evidence: BridgeEvidence
 }
 
 export interface BridgeUnchanged extends ResultBase {
@@ -567,7 +573,10 @@ export class BridgeReadService {
     const reply = [...messages].reverse().find((m) => m.role === 'assistant') ?? null
     const newest = messages.at(-1)?.id ?? null
     const title = maskStoredText(chatId, row.title)
+    const base = this.base(machineId)
+    const evidence = await this.readEvidence(chatId, base.observed_at)
     // The reply's text, not its length: a rewrite of the same length is a change.
+    // `observed_at` is dropped from the evidence, or every read would differ.
     const key = createHash('sha256')
       .update(
         JSON.stringify([
@@ -579,6 +588,7 @@ export class BridgeReadService {
           pending.map((p) => p.request_id),
           row.archived === 1,
           title,
+          evidenceFingerprint(evidence),
         ]),
       )
       .digest('hex')
@@ -593,7 +603,6 @@ export class BridgeReadService {
       k: key,
       l: newest,
     })
-    const base = this.base(machineId)
     if (since && since.k === key) return { ok: true, value: { ...base, chat: ref, unchanged: true, status, cursor } }
 
     let shown = messages.slice(-READ_HISTORY_MESSAGES)
@@ -634,8 +643,34 @@ export class BridgeReadService {
         history_reset: historyReset,
         queued_bridge_messages: [],
         call_receipts: [],
-        evidence: { code: 'not_measured', pull_requests: 'not_measured', checks: 'not_measured' },
+        evidence,
       },
     }
   }
+
+  /** A reader that throws leaves every fact `not_measured`: a read never fails on its evidence. */
+  private async readEvidence(chatId: string, observedAt: string): Promise<BridgeEvidence> {
+    if (!this.deps.evidence) return emptyBridgeEvidence(observedAt)
+    try {
+      return await this.deps.evidence(chatId)
+    } catch (err) {
+      log.warn('building the chat evidence failed', { err: String(err) })
+      return emptyBridgeEvidence(observedAt)
+    }
+  }
+}
+
+/**
+ * The parts of the evidence a cursor is bound to: the statuses and the facts
+ * themselves, without the observation times, which change on every read.
+ */
+function evidenceFingerprint(evidence: BridgeEvidence): unknown {
+  const { observed_at: _at, ...code } = evidence.code
+  return [
+    code,
+    evidence.pull_requests.status,
+    evidence.pull_requests.items.map(({ observed_at: _prAt, ...pr }) => pr),
+    evidence.checks.status,
+    evidence.checks.items.map(({ observed_at: _checkAt, ...check }) => check),
+  ]
 }

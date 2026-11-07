@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.home
 
 import app.switchboard.mobile.data.thread.ThreadState
+import app.switchboard.mobile.domain.remote.BridgeOrigin
 import app.switchboard.mobile.domain.remote.ChatSettle
 import app.switchboard.mobile.domain.remote.ChatSnooze
 import app.switchboard.mobile.domain.remote.Project
@@ -51,6 +52,8 @@ data class HomeRecentRow(
     val snooze: ChatSnooze.State = ChatSnooze.State.None,
     /** Its machine takes Settle. */
     val settleable: Boolean = false,
+    /** Started or messaged through the Instinct bridge. */
+    val bridgeOrigin: BridgeOrigin.Marker? = null,
 ) {
     /** Woke from a snooze and not opened since. */
     val woke: Boolean
@@ -176,6 +179,7 @@ object HomePresenter {
                         snoozable = machine.snooze,
                         snooze = snooze,
                         settleable = machine.settle,
+                        bridgeOrigin = session.bridgeOrigin,
                     )
                 }
             }

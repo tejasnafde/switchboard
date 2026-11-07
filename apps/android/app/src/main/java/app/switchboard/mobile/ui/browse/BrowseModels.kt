@@ -9,6 +9,7 @@ import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.SessionSummary
 import app.switchboard.mobile.domain.remote.Workspace
 import app.switchboard.mobile.domain.thread.HubChildren
+import app.switchboard.mobile.ui.components.AgentMarks
 import java.io.Serializable
 import java.util.Locale
 
@@ -311,8 +312,23 @@ object BrowseRowPolicy {
         else -> "${row.sessionCount} chats"
     }
 
+    /**
+     * The agent whose mark a row draws. A chat imported from Cursor is stored
+     * as claude-code with a Cursor origin, so its mark would name the wrong
+     * product: it keeps its text label instead.
+     */
+    fun conversationMarkAgent(row: BrowseConversationRow): String? =
+        row.agentType.takeIf { row.originSource != "cursor" }
+
     fun conversationSupportingLabel(row: BrowseConversationRow): String = listOfNotNull(
-        if (row.originSource == "cursor") "Cursor" else agentLabel(row.agentType),
+        // The row draws the agent's mark, so only an agent without one is named here.
+        if (AgentMarks.has(conversationMarkAgent(row))) {
+            null
+        } else if (row.originSource == "cursor") {
+            "Cursor"
+        } else {
+            agentLabel(row.agentType)
+        },
         when {
             row.status.isFailureStatus() -> row.status
             row.attention == BrowseThreadAttention.Approval -> "Waiting on your approval"

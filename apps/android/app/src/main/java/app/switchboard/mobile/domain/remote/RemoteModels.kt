@@ -68,6 +68,8 @@ data class SessionSummary(
     val settledAt: Long? = null,
     /** Snooze and the Woke mark; shown only from a backend with `chat_snooze_v1`. */
     val snooze: ChatSnooze.State = ChatSnooze.State.None,
+    /** Started or messaged through the Instinct bridge; null on other chats and from an older backend. */
+    val bridgeOrigin: BridgeOrigin.Marker? = null,
 )
 
 data class MessageSearchResult(

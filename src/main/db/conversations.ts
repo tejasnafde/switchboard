@@ -164,6 +164,23 @@ export function getConversationExecutionRoot(id: string): StoredExecutionRoot | 
 }
 
 /**
+ * Another conversation runs in the same folder, so a change there cannot be
+ * attributed to one chat. The checkout is a worktree path when one is set,
+ * else the project path, which is why both columns are compared.
+ */
+export function sharesExecutionRoot(id: string, cwd: string): boolean {
+  const rootId = resolveRootThreadId(id)
+  return Boolean(
+    getDb()
+      .prepare(
+        `SELECT 1 FROM conversations
+          WHERE id != ? AND COALESCE(worktree_path, project_path) = ? LIMIT 1`,
+      )
+      .get(rootId, cwd),
+  )
+}
+
+/**
  * Move the durable execution root and bump its revision in ONE statement.
  *
  * Splitting these would make the revision decorative: a reader that saw the
@@ -332,7 +349,6 @@ export interface ConversationRow {
   runtime_mode?: RuntimeMode | null
   model?: string | null
   reasoning_effort?: string | null
-  launch_config_name?: string | null
   pending_handoff_from?: string | null
   fork_anchor_digest?: string | null
   fork_anchor_role?: string | null
