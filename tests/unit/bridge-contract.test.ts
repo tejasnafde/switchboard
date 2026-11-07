@@ -2,7 +2,8 @@
  * The shared bridge contract: the flag is off by default, the seven tool
  * names, the default project policy, the mode cap that refuses instead of
  * promoting, the public view without the local root, the delivery state
- * moves, the error shape and the canonical input hash.
+ * moves, the error shape, the canonical input hash, the check definitions
+ * and the measured-evidence shapes.
  */
 import { createHash } from 'crypto'
 import { describe, expect, it } from 'vitest'
@@ -17,9 +18,15 @@ import {
   bridgeInputHash,
   canonicalBridgeInput,
   defaultBridgeProjectPolicy,
+  bridgeChecksLabel,
+  emptyBridgeEvidence,
   instinctBridgeEnabled,
+  parseBridgeCheckDefinitions,
+  parseBridgeCheckSummary,
   parseBridgeControl,
+  parseBridgeOriginMarker,
   publicProjectView,
+  rollUpBridgeEvidence,
   resolveBridgeMode,
   withBridgeOrigins,
 } from '../../src/shared/bridge'
@@ -172,5 +179,91 @@ describe('stop controls', () => {
       { id: 'a' },
       { id: 'b', bridgeOrigin: { stop: 'pending' } },
     ])
+  })
+})
+
+describe('check definitions', () => {
+  it('keeps a program and an argument array, and refuses anything a shell would read', () => {
+    expect(parseBridgeCheckDefinitions([{ name: ' tests ', program: ' npm ', args: ['run', 'test'] }])).toEqual([
+      { name: 'tests', program: 'npm', args: ['run', 'test'] },
+    ])
+    for (const bad of [
+      { name: '', program: 'npm', args: [] },
+      { name: 'a', program: '', args: [] },
+      { name: 'a', program: 'npm test && rm -rf /', args: [] },
+      { name: 'a', program: 'npm; ls', args: [] },
+      { name: 'a', program: 'npm', args: 'run test' },
+      { name: 'a', program: 'npm', args: [7] },
+      { name: 'a', program: 'npm' },
+      'npm test',
+      null,
+    ])
+      expect(parseBridgeCheckDefinitions([bad])).toEqual([])
+  })
+
+  it('drops a duplicate name and caps the list at four', () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({ name: `c${i}`, program: 'npm', args: [] }))
+    expect(parseBridgeCheckDefinitions([...many, { name: 'c0', program: 'other', args: [] }])).toHaveLength(4)
+  })
+
+  it('publishes check names only, never a program or an argument that can name a path', () => {
+    const view = publicProjectView({
+      ...policy,
+      checks: [{ name: 'tests', program: '/Users/me/bin/run', args: ['--root', '/Users/me/site'] }],
+    })
+    expect(view.check_names).toEqual(['tests'])
+    expect(JSON.stringify(view)).not.toContain('/Users/me')
+  })
+})
+
+describe('measured evidence', () => {
+  it('starts with nothing measured and never claims an absence of a problem', () => {
+    const empty = emptyBridgeEvidence('2026-11-07T00:00:00.000Z')
+    expect(empty.code.status).toBe('not_measured')
+    expect(empty.code.attribution).toBe('unknown')
+    expect(empty.pull_requests).toEqual({ status: 'not_measured', items: [] })
+    expect(empty.checks).toEqual({ status: 'not_measured', items: [] })
+  })
+
+  it('rolls up to the worst status, so one unread fact is not a measured whole', () => {
+    expect(rollUpBridgeEvidence([])).toBe('not_measured')
+    expect(rollUpBridgeEvidence(['measured', 'measured'])).toBe('measured')
+    expect(rollUpBridgeEvidence(['measured', 'stale'])).toBe('stale')
+    expect(rollUpBridgeEvidence(['stale', 'not_measured'])).toBe('not_measured')
+    expect(rollUpBridgeEvidence(['measured', 'unavailable', 'stale'])).toBe('unavailable')
+  })
+
+  it('reads a chat row check summary a phone can trust, and drops anything else', () => {
+    expect(parseBridgeCheckSummary({ status: 'measured', passed: 2, failed: 0 })).toEqual({
+      status: 'measured',
+      passed: 2,
+      failed: 0,
+    })
+    for (const bad of [
+      { status: 'green', passed: 1, failed: 0 },
+      { status: 'measured', passed: -1, failed: 0 },
+      { status: 'measured', passed: 1.5, failed: 0 },
+      { status: 'measured', passed: 1 },
+      'measured',
+      null,
+    ])
+      expect(parseBridgeCheckSummary(bad)).toBeUndefined()
+  })
+
+  it('carries the summary on the chat row marker', () => {
+    expect(parseBridgeOriginMarker({ stop: null, checks: { status: 'measured', passed: 1, failed: 0 } })).toEqual({
+      stop: null,
+      checks: { status: 'measured', passed: 1, failed: 0 },
+    })
+    expect(parseBridgeOriginMarker({ stop: 'pending', checks: 'yes' })).toEqual({ stop: 'pending' })
+  })
+
+  it('names what was measured, and says so when nothing was', () => {
+    expect(bridgeChecksLabel({ status: 'measured', passed: 1, failed: 0 })).toBe('1 check passed')
+    expect(bridgeChecksLabel({ status: 'measured', passed: 2, failed: 0 })).toBe('2 checks passed')
+    expect(bridgeChecksLabel({ status: 'measured', passed: 1, failed: 1 })).toBe('1 check failed')
+    expect(bridgeChecksLabel({ status: 'stale', passed: 1, failed: 0 })).toBe('Checks measured on older code')
+    expect(bridgeChecksLabel({ status: 'unavailable', passed: 0, failed: 0 })).toBe('Checks could not run')
+    expect(bridgeChecksLabel({ status: 'not_measured', passed: 0, failed: 0 })).toBe('Checks not measured')
   })
 })

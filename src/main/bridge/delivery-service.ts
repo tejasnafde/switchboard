@@ -69,9 +69,22 @@ import {
 import { turnAcceptanceStateByOrigin } from '../db/turn-acceptance'
 import { createMainLogger } from '../logger'
 import type { SessionStartOpts } from '../provider/types'
+import { bridgeCheckService } from './check-service'
 import { bridgeProjectAgents, type AllowedProject, type BridgeReadService, type BridgeResult } from './read-service'
 
 const log = createMainLogger('bridge:delivery')
+
+/**
+ * Records the checkout as it stands now, before the turn runs, so a later
+ * read can diff against it. Fire and forget: the turn must not wait for git,
+ * and a checkout that cannot be read simply leaves the baseline as it was.
+ */
+function noteBridgeCallBaseline(chatId: string, cwd: string | null): void {
+  if (!cwd) return
+  void bridgeCheckService()
+    ?.noteBridgeCall(chatId, cwd)
+    .catch((err: unknown) => log.warn('recording the bridge turn baseline failed', { err: String(err) }))
+}
 
 export const BRIDGE_MESSAGE_MAX_CHARS = 20_000
 const IDEMPOTENCY_KEY_MAX_CHARS = 200
@@ -369,6 +382,7 @@ export class BridgeDeliveryService {
           source: callerSource(caller),
         })
       })()
+      noteBridgeCallBaseline(chatId, project.sidebarPath)
       const fence = this.fence(chatId)
       const ref = { machine_id: machineId, chat_id: chatId }
       try {
@@ -473,6 +487,8 @@ export class BridgeDeliveryService {
         policyRevision: project.policy.revision,
         source: callerSource(caller),
       })
+      const root = getConversationExecutionRoot(chatId)
+      noteBridgeCallBaseline(chatId, root?.worktreePath ?? root?.projectPath ?? null)
       const live = this.host.liveThread(chatId) ?? chatId
       const actual: BridgeActualDelivery =
         peerDelivery(this.host.provider(live), this.host.midTurn(live), requested, this.host.steerBlocked(live)) ??

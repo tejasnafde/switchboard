@@ -3,7 +3,9 @@
  * starts, messages, reads and stops managed chats in the projects the owner
  * allows, through a relay. This file holds the wire version, the tool names,
  * the project policy, the public shapes, the states and the error codes. Main
- * and the relay share it; it has no runtime dependency.
+ * and the relay share it; it has no runtime dependency. The measured
+ * evidence section holds the check definitions and the fact shapes
+ * `read_chat` returns beside the agent's own reply.
  *
  * Staged flag `instinct_bridge`: off by default. SB_INSTINCT_BRIDGE=1 or the
  * backend setting `labs.instinct_bridge` turns it on.
@@ -84,9 +86,17 @@ export interface BridgeProjectPolicy {
   default_mode: RuntimeMode
   maximum_mode: RuntimeMode
   actions: BridgeProjectActions
+  /** The checks the owner chose for this project. Empty means every check stays `not_measured`. */
+  checks: BridgeCheckDefinition[]
 }
 
-export type BridgeProjectView = Omit<BridgeProjectPolicy, 'canonical_local_root'>
+/**
+ * The policy as a public answer carries it: no local root, and the checks by
+ * NAME only, since a program or an argument can name a path on this Mac.
+ */
+export type BridgeProjectView = Omit<BridgeProjectPolicy, 'canonical_local_root' | 'checks'> & {
+  check_names: string[]
+}
 
 export function defaultBridgeProjectPolicy(input: {
   project_id: string
@@ -102,12 +112,13 @@ export function defaultBridgeProjectPolicy(input: {
     default_mode: DEFAULT_BRIDGE_MODE,
     maximum_mode: DEFAULT_BRIDGE_MODE,
     actions: { ...DEFAULT_BRIDGE_ACTIONS },
+    checks: [],
   }
 }
 
 export function publicProjectView(policy: BridgeProjectPolicy): BridgeProjectView {
-  const { canonical_local_root: _root, ...view } = policy
-  return view
+  const { canonical_local_root: _root, checks, ...view } = policy
+  return { ...view, check_names: checks.map((c) => c.name) }
 }
 
 function modeRank(mode: RuntimeMode): number {
@@ -152,6 +163,29 @@ export interface BridgeProjectSetup {
   /** The flag is on; while it is off the list is empty and nothing can be switched. */
   enabled: boolean
   projects: BridgeProjectSetupRow[]
+}
+
+/** One allowed project's checks on the desktop's setup list (`bridge:list-checks`). */
+export interface BridgeProjectChecksRow {
+  project_id: string
+  label: string
+  checks: BridgeCheckDefinition[]
+  /** The newest recorded run per check name, measured or not. */
+  results: BridgeCheckResultRow[]
+}
+
+export interface BridgeCheckResultRow {
+  name: string
+  status: BridgeEvidenceStatus
+  outcome: BridgeCheckOutcome
+  exit_code: number | null
+  /** When the run ended, epoch ms; null while it has no result. */
+  at: number | null
+}
+
+export interface BridgeChecksSetup {
+  enabled: boolean
+  projects: BridgeProjectChecksRow[]
 }
 
 // ─── Device connection (desktop to relay) ───────────────────────
@@ -321,9 +355,14 @@ export type BridgeStopState = (typeof BRIDGE_STOP_STATES)[number]
 export const BRIDGE_ORIGIN_STOP_STATES = ['pending', 'stopped', 'unconfirmed'] as const
 export type BridgeOriginStopState = (typeof BRIDGE_ORIGIN_STOP_STATES)[number]
 
-/** On a chat list row (`SessionSummary.bridgeOrigin`): the chat was started or messaged through the bridge. */
+/**
+ * On a chat list row (`SessionSummary.bridgeOrigin`): the chat was started or
+ * messaged through the bridge. `checks` is the measured-check evidence the
+ * desktop has recorded for it; absent when the backend sent none.
+ */
 export interface BridgeOriginMarker {
   stop: BridgeOriginStopState | null
+  checks?: BridgeCheckSummary
 }
 
 const ORIGIN_STOP_STATES: ReadonlySet<unknown> = new Set(BRIDGE_ORIGIN_STOP_STATES)
@@ -332,8 +371,10 @@ const ORIGIN_STOP_STATES: ReadonlySet<unknown> = new Set(BRIDGE_ORIGIN_STOP_STAT
 export function parseBridgeOriginMarker(value: unknown): BridgeOriginMarker | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const stop = (value as { stop?: unknown }).stop
-  if (stop === null || stop === undefined) return { stop: null }
-  return ORIGIN_STOP_STATES.has(stop) ? { stop: stop as BridgeOriginStopState } : undefined
+  const checks = parseBridgeCheckSummary((value as { checks?: unknown }).checks)
+  const rest = checks ? { checks } : {}
+  if (stop === null || stop === undefined) return { stop: null, ...rest }
+  return ORIGIN_STOP_STATES.has(stop) ? { stop: stop as BridgeOriginStopState, ...rest } : undefined
 }
 
 /** The short label a chat list shows on a bridge chat. */
@@ -364,6 +405,213 @@ export function withBridgeOrigins<T extends { id: string; bridgeOrigin?: BridgeO
 
 export const BRIDGE_EVIDENCE_STATUSES = ['measured', 'not_measured', 'unavailable', 'stale'] as const
 export type BridgeEvidenceStatus = (typeof BRIDGE_EVIDENCE_STATUSES)[number]
+
+// ─── Measured evidence ──────────────────────────────────────────
+//
+// `agent_reply` is what the agent said. `evidence` is what this desktop read
+// itself. Agent text, a provider shell transcript and a `report_to_hub`
+// result never become evidence: a fact is here only when a recorder on this
+// machine observed it, and it says who observed it, when, and about which
+// commit or tree.
+
+/**
+ * One configured check: a program and an argument ARRAY, never a shell
+ * string, so nothing here is parsed by a shell.
+ */
+export interface BridgeCheckDefinition {
+  name: string
+  program: string
+  args: string[]
+}
+
+/** Checks one project may run. A small cap: each one runs after a bridge turn. */
+export const BRIDGE_CHECKS_MAX = 4
+export const BRIDGE_CHECK_NAME_MAX_CHARS = 60
+const BRIDGE_CHECK_ARGS_MAX = 24
+const BRIDGE_CHECK_ARG_MAX_CHARS = 200
+
+/** The bytes a definition's hash covers, so a changed program or argument is a different check. */
+export function canonicalBridgeCheck(def: BridgeCheckDefinition): string {
+  return JSON.stringify([def.name, def.program, def.args])
+}
+
+/** A definition the owner may store, or null. A shell metacharacter in the program is refused. */
+export function parseBridgeCheckDefinition(value: unknown): BridgeCheckDefinition | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const { name, program, args } = value as { name?: unknown; program?: unknown; args?: unknown }
+  if (typeof name !== 'string' || typeof program !== 'string') return null
+  const trimmedName = name.trim()
+  const trimmedProgram = program.trim()
+  if (!trimmedName || trimmedName.length > BRIDGE_CHECK_NAME_MAX_CHARS) return null
+  if (!trimmedProgram || /[\s;&|<>$`'"\\]/.test(trimmedProgram)) return null
+  if (!Array.isArray(args) || args.length > BRIDGE_CHECK_ARGS_MAX) return null
+  if (!args.every((a) => typeof a === 'string' && a.length > 0 && a.length <= BRIDGE_CHECK_ARG_MAX_CHARS)) return null
+  return { name: trimmedName, program: trimmedProgram, args: [...(args as string[])] }
+}
+
+/** The stored list for one project: valid definitions, unique by name, at most `BRIDGE_CHECKS_MAX`. */
+export function parseBridgeCheckDefinitions(value: unknown): BridgeCheckDefinition[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const checks: BridgeCheckDefinition[] = []
+  for (const entry of value) {
+    const def = parseBridgeCheckDefinition(entry)
+    if (!def || seen.has(def.name)) continue
+    seen.add(def.name)
+    checks.push(def)
+    if (checks.length === BRIDGE_CHECKS_MAX) break
+  }
+  return checks
+}
+
+/** What a measured run ended as. `not_run` covers a cancelled or still scheduled one. */
+export const BRIDGE_CHECK_OUTCOMES = ['passed', 'failed', 'not_run', 'unavailable'] as const
+export type BridgeCheckOutcome = (typeof BRIDGE_CHECK_OUTCOMES)[number]
+
+/** Who observed a fact. Only a recorder on this machine, never a provider or an agent. */
+export type BridgeEvidenceProducer = 'git' | 'pull_request_service' | 'local_check'
+
+export interface BridgeEvidenceFact {
+  producer: BridgeEvidenceProducer
+  status: BridgeEvidenceStatus
+  observed_at: string
+  /** The commit the fact is about; null when it is about a dirty tree with no commit of its own. */
+  commit: string | null
+  /** The git tree the fact is about. */
+  tree: string | null
+}
+
+/** The checkout the chat runs in, read with git. */
+export interface BridgeCodeEvidence extends BridgeEvidenceFact {
+  producer: 'git'
+  branch: string | null
+  dirty: boolean
+  /** The tree recorded when the last bridge call reached this chat. */
+  baseline_tree: string | null
+  /** Files that differ from that baseline; null when there is no baseline to compare with. */
+  changed_files: number | null
+  /** The chat's execution root revision (`conversations.execution_root_revision`). */
+  execution_root_revision: number | null
+  /**
+   * `bridge_chat` only when this chat is the only one rooted at the checkout.
+   * A shared checkout is `unknown`: nothing here proves who wrote a file.
+   */
+  attribution: 'bridge_chat' | 'unknown'
+  /** Plain words for the owner, for example that the tree is dirty with no new commit. */
+  note: string
+}
+
+/** A pull request linked to the chat, read through the existing pull request service. */
+export interface BridgePrEvidence extends BridgeEvidenceFact {
+  producer: 'pull_request_service'
+  url: string | null
+  number: number
+  source_branch: string | null
+  state: 'open' | 'merged' | 'closed' | null
+  /** The head the host reported; `stale` when it is not the commit this checkout is on. */
+  head_commit: string | null
+  checks: { state: 'success' | 'failure' | 'pending' | 'none'; total: number; passed: number; failed: number } | null
+  note: string
+}
+
+/** One run of a configured check by the local measured-check service. */
+export interface BridgeCheckEvidence extends BridgeEvidenceFact {
+  producer: 'local_check'
+  name: string
+  definition_hash: string
+  outcome: BridgeCheckOutcome
+  /** The process's real exit code, or null when it was killed or never ran. */
+  exit_code: number | null
+  signal: string | null
+  started_at: string | null
+  ended_at: string | null
+  /** SHA-256 of the masked output, or null when no output was captured. */
+  log_digest: string | null
+  log_bytes: number | null
+  tree_before: string | null
+  tree_after: string | null
+  /** The run measured a dirty tree, so it is bound to that snapshot and not to a commit. */
+  dirty: boolean
+  /** The chat changed a file the check definition names, so this is not the configured release check. */
+  definition_changed: boolean
+  note: string
+}
+
+export interface BridgeEvidence {
+  code: BridgeCodeEvidence
+  pull_requests: { status: BridgeEvidenceStatus; items: BridgePrEvidence[] }
+  checks: { status: BridgeEvidenceStatus; items: BridgeCheckEvidence[] }
+}
+
+/** Nothing was read: every fact is `not_measured`, never a claim of success. */
+export function emptyBridgeEvidence(observedAt: string): BridgeEvidence {
+  return {
+    code: {
+      producer: 'git',
+      status: 'not_measured',
+      observed_at: observedAt,
+      commit: null,
+      tree: null,
+      branch: null,
+      dirty: false,
+      baseline_tree: null,
+      changed_files: null,
+      execution_root_revision: null,
+      attribution: 'unknown',
+      note: 'The checkout was not read.',
+    },
+    pull_requests: { status: 'not_measured', items: [] },
+    checks: { status: 'not_measured', items: [] },
+  }
+}
+
+/**
+ * The worst status wins, so one unread fact never reads as a measured whole.
+ * A fact that could not be read beats one that was never taken, which beats
+ * one taken on other code.
+ */
+export function rollUpBridgeEvidence(statuses: readonly BridgeEvidenceStatus[]): BridgeEvidenceStatus {
+  if (statuses.length === 0) return 'not_measured'
+  for (const worst of ['unavailable', 'not_measured', 'stale'] as const) if (statuses.includes(worst)) return worst
+  return 'measured'
+}
+
+/** What a chat list shows about a bridge chat's checks. Recorded runs only: a list reads no checkout. */
+export interface BridgeCheckSummary {
+  status: BridgeEvidenceStatus
+  passed: number
+  failed: number
+}
+
+const EVIDENCE_STATUSES: ReadonlySet<unknown> = new Set(BRIDGE_EVIDENCE_STATUSES)
+
+/** A chat row's check summary as a phone reads it; undefined for anything it cannot read. */
+export function parseBridgeCheckSummary(value: unknown): BridgeCheckSummary | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const { status, passed, failed } = value as { status?: unknown; passed?: unknown; failed?: unknown }
+  if (!EVIDENCE_STATUSES.has(status)) return undefined
+  const count = (n: unknown) => (typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : null)
+  const ok = count(passed)
+  const bad = count(failed)
+  if (ok === null || bad === null) return undefined
+  return { status: status as BridgeEvidenceStatus, passed: ok, failed: bad }
+}
+
+export function bridgeChecksLabel(summary: BridgeCheckSummary): string {
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  switch (summary.status) {
+    case 'measured':
+      return summary.failed > 0
+        ? `${count(summary.failed, 'check')} failed`
+        : `${count(summary.passed, 'check')} passed`
+    case 'stale':
+      return 'Checks measured on older code'
+    case 'unavailable':
+      return 'Checks could not run'
+    default:
+      return 'Checks not measured'
+  }
+}
 
 // ─── Errors ─────────────────────────────────────────────────────
 

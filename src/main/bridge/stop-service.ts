@@ -12,6 +12,8 @@
  *
  * This works with the `instinct_bridge` flag off too: a saved kill, the
  * generation, status and stops stay in force for existing bridge origins.
+ * Start-time recovery here also cancels a measured check the previous
+ * process was still running, so none can report a result it never had.
  */
 import {
   BRIDGE_CONTROL_LEASE_MS,
@@ -20,6 +22,7 @@ import {
   type BridgeStopStatus,
 } from '@shared/bridge'
 import {
+  cancelInterruptedBridgeCheckRuns,
   markPendingBridgeStopsUnconfirmed,
   readBridgeStopRecord,
   recoverBridgeCalls,
@@ -75,6 +78,8 @@ export class BridgeStopService {
     const recovered = recoverBridgeCalls()
     const retired = retireExpiredBridgeCalls(this.host.now())
     const pending = markPendingBridgeStopsUnconfirmed()
+    // A check the previous process was running cannot be accounted for either.
+    const checks = cancelInterruptedBridgeCheckRuns(this.host.now())
     const record = readBridgeStopRecord()
     const covered = record.lastResult?.generation ?? 0
     if (record.generation > covered || pending.length > 0) {
@@ -95,6 +100,7 @@ export class BridgeStopService {
       pending: pending.length,
       ...recovered,
       retired,
+      checksCancelled: checks,
     })
   }
 

@@ -10,6 +10,7 @@ import { SETTING_ROW, labsWhen, type SettingRowDef } from './settings-rows'
 import { SETTINGS_CHANGED_ELSEWHERE } from '../../services/settings-file-sync'
 import { Switch } from '../ui/switch'
 import { BridgeProjectsPanel } from './BridgeProjectsPanel'
+import { BridgeChecksPanel } from './BridgeChecksPanel'
 import { BridgeDevicePanel } from './BridgeDevicePanel'
 import { BridgeStopPanel } from './BridgeStopPanel'
 import { createRendererLogger } from '../../logger'
@@ -81,6 +82,7 @@ export function LabsPage({
               {bridgeOn && (
                 <>
                   <BridgeProjectsPanel />
+                  <BridgeChecksPanel />
                   <BridgeDevicePanel />
                 </>
               )}

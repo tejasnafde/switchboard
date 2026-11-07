@@ -164,6 +164,22 @@ export function getConversationExecutionRoot(id: string): StoredExecutionRoot | 
 }
 
 /**
+ * Another conversation runs in the same folder, so a change there cannot be
+ * attributed to one chat. The checkout is a worktree path when one is set,
+ * else the project path, which is why both columns are compared.
+ */
+export function sharesExecutionRoot(id: string, cwd: string): boolean {
+  const rootId = resolveRootThreadId(id)
+  const row = getDb()
+    .prepare(
+      `SELECT 1 AS hit FROM conversations
+        WHERE id != ? AND COALESCE(worktree_path, project_path) = ? LIMIT 1`,
+    )
+    .get(rootId, cwd) as { hit: number } | undefined
+  return row !== undefined
+}
+
+/**
  * Move the durable execution root and bump its revision in ONE statement.
  *
  * Splitting these would make the revision decorative: a reader that saw the

@@ -13,7 +13,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { CHAT_SETTLE_CAPABILITY, SETTLE_UNDO_MS, settledNoticeText } from '@shared/chat-settle'
 import { CHAT_SNOOZE_CAPABILITY, DEFAULT_SNOOZE_PRESETS, wakeLabel, type SnoozePresetSpec } from '@shared/chat-snooze'
 import { snoozePrOf, type SnoozePrChoice } from '@shared/chat-snooze-pr'
-import { bridgeOriginLabel } from '@shared/bridge'
+import { bridgeChecksLabel, bridgeOriginLabel } from '@shared/bridge'
 import { createLogger } from '@shared/logger'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import {
@@ -303,6 +303,7 @@ export function RecentsList({
                   <Text style={styles.meta} numberOfLines={1}>
                     {`${row.projectName} · ${row.connectionLabel}`}
                     {row.bridgeOrigin ? ` · ${bridgeOriginLabel(row.bridgeOrigin)}` : ''}
+                    {row.bridgeOrigin?.checks ? ` · ${bridgeChecksLabel(row.bridgeOrigin.checks)}` : ''}
                   </Text>
                 </View>
                 <Trailing row={row} />
