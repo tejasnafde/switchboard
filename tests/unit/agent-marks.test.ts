@@ -10,14 +10,15 @@ describe('agent marks', () => {
     expect(missing).toEqual([ACP_COMMAND_AGENT])
   })
 
-  it('sizes every mark by the extent of its own artwork', () => {
+  it('draws every mark in a near-square box, so none looks smaller than its neighbours', () => {
     for (const [agent, mark] of Object.entries(AGENT_MARKS)) {
       const [x, y, width, height] = mark.viewBox.split(' ').map(Number)
       expect([x, y, width, height].every(Number.isFinite), agent).toBe(true)
       expect(width, agent).toBeGreaterThan(0)
       expect(height, agent).toBeGreaterThan(0)
-      // Side by side at one size, a mark drawn into a box far larger than
-      // itself looks like a different, smaller icon.
+      // Side by side at one size, a mark drawn into a box much wider or
+      // taller than itself looks like a different, smaller icon, and a phone
+      // that scales it into a square icon stretches it.
       expect(Math.min(width, height) / Math.max(width, height), agent).toBeGreaterThan(0.6)
       expect(mark.paths.length, agent).toBeGreaterThan(0)
       for (const d of mark.paths) expect(d[0], agent).toMatch(/[Mm]/)
