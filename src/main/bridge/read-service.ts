@@ -653,9 +653,11 @@ export class BridgeReadService {
       p: project.policy.project_id,
       r: project.policy.revision,
       u: project.policy.updated_at,
-      k: key,
       // A page of a long reply delivers no history, so it hands back the
-      // place the caller was already at: nothing is skipped by reading one.
+      // place and the fingerprint the caller was already at. A change that
+      // lands between the first read and the page is then still new to the
+      // next `since` read, rather than passing as unchanged and never shown.
+      k: replyOffset === null ? key : (since?.k ?? key),
       l: replyOffset === null ? newest : (since?.l ?? null),
     })
     // A page of a long reply is asked for by offset, so it is always answered,
@@ -672,12 +674,14 @@ export class BridgeReadService {
     }
     const live = this.liveActivityByRoot()
     // A page of a long reply carries no history: the whole budget is the page.
-    const rows = (replyOffset === null ? shown : []).map((m) => ({
-      message_id: m.id,
-      role: m.role,
-      text: cap(m.content, READ_MESSAGE_MAX_CHARS),
-      at: new Date(m.timestamp).toISOString(),
-    }))
+    // A message cut by its own cap is a cut like any other, so the ids of the
+    // cut ones travel with the rows and mark the answer that keeps them.
+    const capped = new Set<string>()
+    const rows = (replyOffset === null ? shown : []).map((m) => {
+      const text = cap(m.content, READ_MESSAGE_MAX_CHARS)
+      if (text.length < m.content.length) capped.add(m.id)
+      return { message_id: m.id, role: m.role, text, at: new Date(m.timestamp).toISOString() }
+    })
     return {
       ok: true,
       value: fitChatSnapshot({
@@ -710,6 +714,7 @@ export class BridgeReadService {
         replyText: reply?.content ?? '',
         replyOffset,
         rows,
+        capped,
       }),
     }
   }
@@ -765,6 +770,8 @@ interface FitInput {
   replyOffset: number | null
   /** The history window, oldest first, each message already capped. */
   rows: BridgeChatSnapshot['history']
+  /** The ids in `rows` whose text that cap shortened. */
+  capped: Set<string>
 }
 
 /**
@@ -773,7 +780,7 @@ interface FitInput {
  * keeps its head and its tail. Every cut is counted in the answer, so a
  * reader is never shown a part as the whole.
  */
-function fitChatSnapshot({ draft, reply, replyText, replyOffset, rows }: FitInput): BridgeChatSnapshot {
+function fitChatSnapshot({ draft, reply, replyText, replyOffset, rows, capped }: FitInput): BridgeChatSnapshot {
   // Everything but the two long parts, with every number as wide as it can
   // become, so the room measured here is never more than what is left.
   const shell = (snapshot: BridgeChatSnapshot): BridgeChatSnapshot => ({
@@ -827,7 +834,8 @@ function fitChatSnapshot({ draft, reply, replyText, replyOffset, rows }: FitInpu
     },
     history: kept,
     omitted,
-    truncated: chunk.truncated || Object.values(omitted).some((n) => n > 0),
+    truncated:
+      chunk.truncated || Object.values(omitted).some((n) => n > 0) || kept.some((row) => capped.has(row.message_id)),
   }
   // The arithmetic above holds, but the budget is a promise: never hand back
   // an answer over it because one estimate was a few bytes out. The history

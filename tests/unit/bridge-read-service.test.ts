@@ -615,6 +615,34 @@ describe("read_chat's size budget", () => {
     expect(next.history_reset).toBe(false)
   })
 
+  it('does not hide a message that lands between a read and a page of its reply', async () => {
+    const first = ok(await service.readChat({ chat: 'big' }))
+    if (!('agent_reply' in first)) throw new Error('expected a snapshot')
+    // The chat moves on while the caller is still reading the long reply.
+    insert('between', 'big', 'the agent found one more thing', 95_000)
+    const page = ok(await service.readChat({ chat: 'big', since: first.cursor, reply_offset: 200 }))
+    if (!('agent_reply' in page)) throw new Error('expected a snapshot')
+    // The page carries the fingerprint the caller already had, so the next
+    // poll still reports the new message instead of answering `unchanged`.
+    const next = ok(await service.readChat({ chat: 'big', since: page.cursor }))
+    if (!('agent_reply' in next)) throw new Error('expected a snapshot')
+    expect(next.unchanged).toBe(false)
+    expect(next.history.map((m) => m.message_id)).toContain('between')
+  })
+
+  it('marks the answer cut when a message it keeps was shortened by its own cap', async () => {
+    chat('capped', ALLOWED, 'One long message')
+    insert('cu1', 'capped', 'what did you find?', 1_000, 'user')
+    insert('cr1', 'capped', 'y'.repeat(4_000), 2_000)
+    const snap = ok(await service.readChat({ chat: 'capped' }))
+    if (!('agent_reply' in snap)) throw new Error('expected a snapshot')
+    // Nothing was left out, so only the shortened message can mark this.
+    expect(snap.omitted).toEqual({ history: 0, pending: 0, pull_requests: 0, checks: 0 })
+    expect(snap.agent_reply!.truncated).toBe(false)
+    expect(snap.history.at(-1)!.text.length).toBeLessThan(4_000)
+    expect(snap.truncated).toBe(true)
+  })
+
   it('keeps the newest open requests and counts the rest', async () => {
     live.pending.set(
       'big',
