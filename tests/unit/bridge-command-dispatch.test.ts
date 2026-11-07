@@ -1,6 +1,6 @@
 /**
  * The relay's `command` frames on this desktop: the frame shape and the wire
- * version, a full owner call for each of the seven tools, the owner's
+ * version, a full owner call for each of the eight tools, the owner's
  * authority (the project policy alone, no calling chat and no plan-mode or
  * chat-scoped rule of a local agent), a denied project and a denied mode,
  * fuzzy ambiguity, a project the owner took off the allowlist, a moved
@@ -173,6 +173,10 @@ describe('frame shape', () => {
     expect(await bad({ ...frame('read_chat'), stop_generation: -1 })).toMatchObject({ code: 'invalid_request' })
     expect(await bad(frame('search_chats'))).toMatchObject({ code: 'invalid_request' })
     expect(await bad(frame('start_chat', { project: 'Raves site' }))).toMatchObject({ code: 'invalid_request' })
+    expect(await bad(frame('list_agents', { project: 7 }))).toMatchObject({ code: 'invalid_request' })
+    expect(await bad(frame('start_chat', { project: 'Raves site', message: 'Go', account: 7 }))).toMatchObject({
+      code: 'invalid_request',
+    })
   })
 
   it('refuses every tool with the flag off and never reaches a provider', async () => {
@@ -180,6 +184,7 @@ describe('frame shape', () => {
     flag = false
     for (const f of [
       frame('list_projects'),
+      frame('list_agents'),
       frame('list_recent_chats'),
       frame('search_chats', { query: 'header' }),
       frame('read_chat', { chat: { machine_id: MACHINE, chat_id: 'c1' } }),
@@ -212,7 +217,7 @@ describe('frame shape', () => {
 })
 
 describe('a full owner call for each tool', () => {
-  it('answers all seven on an allowed target', async () => {
+  it('answers all eight on an allowed target', async () => {
     const projects = await ok(frame('list_projects'))
     expect(projects.projects).toMatchObject([{ label: 'Raves site', machine_id: MACHINE, maximum_mode: 'auto' }])
     expect(JSON.stringify(projects)).not.toContain(ALLOWED)
@@ -228,6 +233,10 @@ describe('a full owner call for each tool', () => {
     const read = await ok(frame('read_chat', { chat }))
     expect(read).toMatchObject({ chat, status: 'idle', archived: false })
     expect((read.history as Array<{ text: string }>).map((m) => m.text)).toEqual(['Fix the header', 'And the footer'])
+
+    const agents = await ok(frame('list_agents'))
+    expect((agents.agents as Array<{ agent: string }>).map((a) => a.agent)).toContain('claude-code')
+    expect(JSON.stringify(agents)).not.toContain(ALLOWED)
 
     const recent = await ok(frame('list_recent_chats', { limit: 20 }))
     expect((recent.chats as Array<{ chat: { chat_id: string } }>).map((c) => c.chat.chat_id)).toContain(chat.chat_id)

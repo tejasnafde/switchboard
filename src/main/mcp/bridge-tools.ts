@@ -1,7 +1,7 @@
 /**
  * The Instinct bridge tools on the Switchboard MCP server (flag
  * `instinct_bridge`), for local agents: the reads list_projects,
- * list_recent_chats, search_chats and read_chat, and the mutations
+ * list_agents, list_recent_chats, search_chats and read_chat, and the mutations
  * start_chat, send_to_chat and stop_chat. The registry lists them only while
  * the flag is on, and each call checks it again, so turning it off refuses at
  * once.
@@ -125,6 +125,26 @@ export function buildBridgeTools(deps: BridgeToolDeps): McpTool[] {
       call: (args) => run('list_projects', args, () => answer(deps.service.listProjects())),
     },
     {
+      name: 'list_agents',
+      description:
+        "The agents the allowed projects offer: each agent's models (id and name) and its accounts with the " +
+        'five-hour and weekly usage percent and reset times, plus would_pick, the account start_chat takes when ' +
+        'no account is given. project narrows it to one project. Read this before start_chat to name a model and ' +
+        'an account that exist.',
+      inputSchema: {
+        type: 'object',
+        properties: { project: { type: 'string' } },
+        additionalProperties: false,
+      },
+      annotations: annotations('List bridge agents'),
+      call: (args) =>
+        run('list_agents', args, async () => {
+          if (args.project !== undefined && typeof args.project !== 'string')
+            return toolText('project must be a string.', true)
+          return answer(await deps.service.listAgents({ project: args.project as string | undefined }))
+        }),
+    },
+    {
       name: 'list_recent_chats',
       description:
         'Chats in the allowed projects, newest activity first. Archived chats are left out. project is a project id ' +
@@ -184,9 +204,11 @@ export function buildBridgeTools(deps: BridgeToolDeps): McpTool[] {
       name: 'start_chat',
       description:
         'Start a new chat in an allowed project and send it the first message as the owner. project is a project id ' +
-        'or label from list_projects. agent, model and mode are optional: the project defaults apply, and a mode ' +
-        'wider than the project allows is refused. Accepted means the message went in, not that the work is done; ' +
-        'follow it with read_chat.',
+        'or label from list_projects. agent, model, account and mode are optional: the project defaults apply, and ' +
+        'a mode wider than the project allows is refused. account is an account id or name from list_agents; with ' +
+        'none, the account with the most room is taken (a five-hour window under 90 percent first, then the ' +
+        'emptiest weekly window). The answer names the agent, model and account it used. Accepted means the ' +
+        'message went in, not that the work is done; follow it with read_chat.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -194,6 +216,7 @@ export function buildBridgeTools(deps: BridgeToolDeps): McpTool[] {
           message: { type: 'string' },
           agent: { type: 'string' },
           model: { type: 'string' },
+          account: { type: 'string' },
           mode: { type: 'string' },
           idempotency_key: keySchema,
         },
@@ -208,6 +231,7 @@ export function buildBridgeTools(deps: BridgeToolDeps): McpTool[] {
             (typeof args.project !== 'string' || !args.project.trim() ? 'project is required.' : null) ??
             optionalString(args, 'agent') ??
             optionalString(args, 'model') ??
+            optionalString(args, 'account') ??
             optionalString(args, 'mode')
           if (shape) return toolText(shape, true)
           return answer(
@@ -216,6 +240,7 @@ export function buildBridgeTools(deps: BridgeToolDeps): McpTool[] {
               message: args.message as string,
               agent: args.agent as string | undefined,
               model: args.model as string | undefined,
+              account: args.account as string | undefined,
               mode: args.mode as string | undefined,
               idempotency_key: args.idempotency_key as string,
             }),

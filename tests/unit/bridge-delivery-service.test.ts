@@ -65,7 +65,8 @@ import { FakeHost } from './helpers/bridge-delivery-host'
 import { buildBridgeTools } from '../../src/main/mcp/bridge-tools'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
 import { SESSION_START_STOPPED, type RuntimeMode } from '../../src/shared/provider-events'
-import type { StoredBridgeProjectPolicy } from '../../src/shared/bridge'
+import type { BridgeAccountView, StoredBridgeProjectPolicy } from '../../src/shared/bridge'
+import type { BridgeAccountDeps } from '../../src/main/bridge/accounts'
 
 const MACHINE = 'hub-test-machine'
 const ROOT = mkdtempSync(join(tmpdir(), 'sb-bridge-delivery-'))
@@ -94,6 +95,35 @@ const err = <T>(r: Result<T>) => {
 
 let keySeq = 0
 const key = () => `k${++keySeq}`
+
+/** The accounts the service sees; a test rewrites the list before it starts a chat. */
+let accountRows: BridgeAccountView[] = []
+const pct = (used: number) => ({ used_percent: used, resets_at: '2026-11-07T18:00:00.000Z' })
+const accountDeps: BridgeAccountDeps = {
+  accounts: () => accountRows.map((a) => ({ id: a.account_id, name: a.name })),
+  usage: async (id) => {
+    const row = accountRows.find((a) => a.account_id === id)!
+    const window = (kind: 'session' | 'weekly', used: number | null) => ({
+      id: `${id}-${kind}`,
+      label: kind,
+      kind,
+      usedPercent: used,
+      resetsAtMs: null,
+      windowMinutes: null,
+      severity: 'ok' as const,
+    })
+    return {
+      instanceId: id,
+      agentType: 'claude-code',
+      status: 'ok',
+      plan: null,
+      account: null,
+      windows: [window('session', row.session.used_percent), window('weekly', row.weekly.used_percent)],
+      overage: [],
+      fetchedAtMs: 0,
+    }
+  },
+}
 
 function start(extra: Record<string, unknown> = {}, caller = agent()) {
   return delivery.startChat(caller, {
@@ -148,7 +178,11 @@ beforeEach(() => {
     machineId: () => MACHINE,
     live: { status: () => null, busy: (id) => host.busy(id), pending: (id) => host.pending.get(id) ?? [] },
   })
-  delivery = new BridgeDeliveryService(host, reads, Date.now, { stopConfirmMs: 300, stopPollMs: 5 })
+  accountRows = [
+    { account_id: 'claude-work', name: 'Work', usage: 'ok', session: pct(95), weekly: pct(10) },
+    { account_id: 'claude-home', name: 'Home laptop', usage: 'ok', session: pct(20), weekly: pct(60) },
+  ]
+  delivery = new BridgeDeliveryService(host, reads, Date.now, { stopConfirmMs: 300, stopPollMs: 5 }, accountDeps)
   addProject(ALLOWED, 'Raves site')
   addProject(OTHER, 'Other')
   setBridgeProjectAllowed(ALLOWED, true, MACHINE)
@@ -390,6 +424,95 @@ describe('start_chat', () => {
     expect(err(await new BridgeDeliveryService(host, reads).startChat(agent(), never))).toMatchObject({
       non_delivery_confirmed: true,
     })
+  })
+})
+
+describe('start_chat picks an account', () => {
+  it('takes the account with the most room, names it and starts the session on it', async () => {
+    const receipt = ok(await start())
+    expect(receipt.account).toEqual({ account_id: 'claude-home', name: 'Home laptop' })
+    expect(host.starts.at(-1)?.instanceId).toBe('claude-home')
+  })
+
+  it('takes the most weekly room once every five-hour window is busy', async () => {
+    accountRows = [
+      { account_id: 'claude-work', name: 'Work', usage: 'ok', session: pct(99), weekly: pct(70) },
+      { account_id: 'claude-home', name: 'Home laptop', usage: 'ok', session: pct(95), weekly: pct(20) },
+    ]
+    expect(ok(await start()).account?.account_id).toBe('claude-home')
+  })
+
+  it('honours an account named by id or by the name the owner gave it', async () => {
+    expect(ok(await start({ account: 'claude-work' })).account?.account_id).toBe('claude-work')
+    expect(ok(await start({ account: 'Work' })).account?.account_id).toBe('claude-work')
+    expect(ok(await start({ account: 'home laptop' })).account?.account_id).toBe('claude-home')
+  })
+
+  it('refuses an account name nothing has, and lists what the agent does have', async () => {
+    const error = err(await start({ account: 'office mac' }))
+    expect(error.code).toBe('agent_unavailable')
+    expect(error.account_choices).toEqual([
+      { account_id: 'claude-work', name: 'Work' },
+      { account_id: 'claude-home', name: 'Home laptop' },
+    ])
+    expect(host.starts).toHaveLength(0)
+  })
+
+  it('refuses a name that matches two accounts rather than guessing', async () => {
+    accountRows = [
+      { account_id: 'a1', name: 'Work main', usage: 'ok', session: pct(10), weekly: pct(10) },
+      { account_id: 'a2', name: 'Work spare', usage: 'ok', session: pct(10), weekly: pct(10) },
+    ]
+    expect(err(await start({ account: 'work' })).code).toBe('ambiguous_target')
+  })
+
+  it('starts with no account when the agent has none, as it did before', async () => {
+    accountRows = []
+    const receipt = ok(await start())
+    expect(receipt.account).toBeNull()
+    expect(host.starts.at(-1)?.instanceId).toBeUndefined()
+  })
+
+  it('answers a replay with the account it used', async () => {
+    const first = ok(await start({ idempotency_key: 'same' }))
+    const replay = ok(await start({ idempotency_key: 'same' }))
+    expect(replay.account).toEqual(first.account)
+    expect(replay.replayed).toBe(true)
+  })
+})
+
+describe('the mode cap refusal', () => {
+  it('names the chat mode, the project cap and where the owner changes it', async () => {
+    const [policy] = listBridgeProjectPolicies()
+    saveBridgeProjectPolicy({ ...policy, allowed_agents: ['claude-code'], maximum_mode: 'auto' })
+    idleChat('wide', 'claude', 'full-access')
+    const error = err(
+      await delivery.sendToChat(owner('relay-wide'), { chat: 'wide', message: 'hi', idempotency_key: 'relay-wide' }),
+    )
+    expect(error.code).toBe('mode_not_allowed')
+    expect(error.message).toBe(
+      'This chat runs in Full access. The bridge may drive chats in this project up to Auto. ' +
+        'Change Highest mode for Raves site in Settings > Labs, or start a new chat.',
+    )
+  })
+
+  it('lets the bridge into a full-access chat once the project allows it', async () => {
+    const [policy] = listBridgeProjectPolicies()
+    saveBridgeProjectPolicy({ ...policy, allowed_agents: ['claude-code'], maximum_mode: 'full-access' })
+    idleChat('wide2', 'claude', 'full-access')
+    const sent = ok(
+      await delivery.sendToChat(owner('relay-wide2'), { chat: 'wide2', message: 'hi', idempotency_key: 'r2' }),
+    )
+    expect(sent.state).toBe('accepted')
+  })
+
+  it('names the mode a start asked for when it is wider than the project allows', async () => {
+    const error = err(await start({ mode: 'full-access' }))
+    expect(error.code).toBe('mode_not_allowed')
+    expect(error.message).toBe(
+      'Full access is wider than this project allows. The bridge may start chats in this project up to Auto. ' +
+        'Change Highest mode for Raves site in Settings > Labs.',
+    )
   })
 })
 
@@ -764,6 +887,7 @@ describe('the MCP tools', () => {
     const list = tools()
     expect(list.map((t) => t.name)).toEqual([
       'list_projects',
+      'list_agents',
       'list_recent_chats',
       'search_chats',
       'read_chat',

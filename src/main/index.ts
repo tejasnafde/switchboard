@@ -397,7 +397,7 @@ function startBridgeStopControls(): void {
 }
 
 /**
- * Lets the relay run the seven tools on this desktop, through the registry's
+ * Lets the relay run the eight tools on this desktop, through the registry's
  * own bridge services. Each frame re-reads the `instinct_bridge` flag, and
  * the services read the policy, the execution root and the kill again right
  * before each mutation. Once the app is quitting no command runs at all: the

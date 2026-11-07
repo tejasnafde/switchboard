@@ -20,9 +20,12 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { sep } from 'node:path'
 import {
+  bridgeChatModeRefusal,
   bridgeError,
   bridgeInputHash,
+  bridgeStartModeRefusal,
   resolveBridgeMode,
+  type BridgeAccountView,
   type BridgeCallState,
   type BridgeChatRef,
   type BridgeError,
@@ -69,8 +72,10 @@ import {
 import { turnAcceptanceStateByOrigin } from '../db/turn-acceptance'
 import { createMainLogger } from '../logger'
 import type { SessionStartOpts } from '../provider/types'
+import { chooseBridgeAccount, readBridgeAccounts, type BridgeAccountDeps } from './accounts'
 import { bridgeCheckService } from './check-service'
 import { bridgeProjectAgents, type AllowedProject, type BridgeReadService, type BridgeResult } from './read-service'
+import { resolveLabel } from './resolve-label'
 
 const log = createMainLogger('bridge:delivery')
 
@@ -176,6 +181,8 @@ export interface StartChatInput {
   agent?: string
   model?: string
   mode?: string
+  /** An account id or the name the owner gave it. None: the account with the most room. */
+  account?: string
   idempotency_key: string
 }
 
@@ -206,7 +213,10 @@ export interface BridgeStartReceipt extends ReceiptBase {
   project: { project_id: string; label: string }
   message_id: string
   agent: AgentType
+  /** The model the chat was started with; null when the agent's own default applies. */
   model: string | null
+  /** The account the chat runs on, as `list_agents` names it; null when none was resolved. */
+  account: { account_id: string; name: string } | null
   mode: RuntimeMode
 }
 
@@ -232,6 +242,7 @@ type CallTarget =
       origin: string
       agent: AgentType
       model: string | null
+      account: { account_id: string; name: string } | null
       mode: RuntimeMode
     }
   | { op: 'send_to_chat'; chat_id: string; project_id: string; origin: string; requested: TurnDelivery }
@@ -283,7 +294,13 @@ export class BridgeDeliveryService {
     private readonly reads: BridgeReadService,
     private readonly now: () => number = Date.now,
     private readonly timing = { stopConfirmMs: 20_000, stopPollMs: 200 },
+    /** The accounts and their usage; tests pass their own instead of the live probes. */
+    private readonly accountDeps?: BridgeAccountDeps,
   ) {}
+
+  private accounts(agent: AgentType): Promise<BridgeAccountView[]> {
+    return readBridgeAccounts(agent, this.accountDeps)
+  }
 
   // ─── start_chat ───────────────────────────────────────────────
 
@@ -302,7 +319,11 @@ export class BridgeDeliveryService {
     const mode = resolveBridgeMode(input.mode, { default_mode: narrower(policy.default_mode, cap), maximum_mode: cap })
     if (!mode.ok)
       return fail(
-        bridgeError('mode_not_allowed', `This project allows modes up to ${cap} for this caller.`, { target }),
+        bridgeError(
+          'mode_not_allowed',
+          bridgeStartModeRefusal({ requested: input.mode, cap, projectLabel: policy.label }),
+          { target },
+        ),
       )
 
     // Only agents that can start here are offered, so a choice from the list never fails the same way.
@@ -326,6 +347,9 @@ export class BridgeDeliveryService {
     // A policy default made for another agent is not used; the agent's own saved default applies.
     const fallback = policy.default_model
     const model = input.model ?? (fallback && (models.length === 0 || models.includes(fallback)) ? fallback : null)
+    const picked = await this.resolveAccount(agent, input.account, target)
+    if (!picked.ok) return picked
+    const account = picked.value
     if (!insideRoot(project.sidebarPath, policy.canonical_local_root))
       return fail(bridgeError('project_not_allowed', 'The project folder moved or no longer resolves.', { target }))
 
@@ -363,6 +387,7 @@ export class BridgeDeliveryService {
         origin,
         agent,
         model,
+        account,
         mode: mode.mode,
       } satisfies CallTarget,
     })
@@ -397,6 +422,7 @@ export class BridgeDeliveryService {
           cwd: project.sidebarPath,
           runtimeMode: mode.mode,
           ...(model ? { model } : {}),
+          ...(account ? { instanceId: account.account_id } : {}),
         })
         // As a client does for a new chat: a resume after a restart keeps the account it started on.
         if (session.instanceId) setConversationProviderInstanceId(chatId, session.instanceId)
@@ -427,12 +453,60 @@ export class BridgeDeliveryService {
         return delivered
       }
       await this.haltIfStopped(chatId, fence)
-      log.info('bridge chat started', { callId, chatId, projectId: policy.project_id, agent, mode: mode.mode })
+      log.info('bridge chat started', {
+        callId,
+        chatId,
+        projectId: policy.project_id,
+        agent,
+        mode: mode.mode,
+        account: account?.account_id ?? null,
+      })
       return this.answer(getBridgeCall(callId)!, false) as BridgeResult<BridgeStartReceipt>
     } finally {
       this.active.delete(callId)
       this.startsInFlight.delete(callId)
     }
+  }
+
+  /**
+   * The account a start runs on. An `account` argument is an account id, then
+   * the name the owner gave it (exact, then fuzzy), so the assistant can pass
+   * back what `list_agents` showed it. With none, the account with the most
+   * room wins (`pickBridgeAccount`): a five-hour window under 90 percent
+   * first, then the emptiest weekly window. An agent with no enabled account
+   * resolves to null, and the session start falls back as it always did.
+   */
+  private async resolveAccount(
+    agent: AgentType,
+    asked: string | undefined,
+    target: { project_id: string },
+  ): Promise<BridgeResult<{ account_id: string; name: string } | null>> {
+    const accounts = await this.accounts(agent)
+    if (accounts.length === 0) return { ok: true, value: null }
+    const plain = (a: BridgeAccountView) => ({ account_id: a.account_id, name: a.name })
+    const choices = accounts.map(plain)
+    if (asked !== undefined) {
+      const byId = accounts.find((a) => a.account_id === asked)
+      if (byId) return { ok: true, value: plain(byId) }
+      const found = resolveLabel(accounts, (a) => a.name, asked)
+      if (found.kind === 'one') return { ok: true, value: plain(found.item) }
+      if (found.kind === 'ambiguous')
+        return fail(
+          bridgeError('ambiguous_target', 'Several accounts match that name. Ask the owner which one.', {
+            target,
+            account_choices: found.choices.map(plain),
+          }),
+        )
+      return fail(
+        bridgeError('agent_unavailable', `${agent} has no account by that name.`, {
+          target,
+          account_choices: choices,
+        }),
+      )
+    }
+    const id = chooseBridgeAccount(accounts)
+    const chosen = accounts.find((a) => a.account_id === id)
+    return chosen ? { ok: true, value: plain(chosen) } : { ok: true, value: null }
   }
 
   // ─── send_to_chat ─────────────────────────────────────────────
@@ -721,6 +795,8 @@ export class BridgeDeliveryService {
           message_id: echoMessageId(target.origin),
           agent: target.agent,
           model: target.model,
+          // A record stored before the account was chosen here has none.
+          account: target.account ?? null,
           mode: target.mode,
         },
       }
@@ -758,10 +834,11 @@ export class BridgeDeliveryService {
       return bridgeError('child_read_only', 'That chat belongs to a hub. Message its hub chat.', { target: ref })
     if (row && agentDenied(project.policy, row.agent_type)) return agentNotAllowed(project.policy.allowed_agents, ref)
     const cap = callerCap(project.policy, caller)
-    if (wider(this.host.chatMode(chatId), cap))
+    const chatMode = this.host.chatMode(chatId)
+    if (wider(chatMode, cap))
       return bridgeError(
         'mode_not_allowed',
-        `That chat runs in a wider mode than this project allows (${cap}). The owner can lower it.`,
+        bridgeChatModeRefusal({ chatMode, cap, projectLabel: project.policy.label }),
         { target: ref },
       )
     return null
@@ -793,10 +870,13 @@ export class BridgeDeliveryService {
       return bridgeError('project_not_allowed', 'That project is no longer allowed. Nothing was sent.', { target: ref })
     if (agentDenied(current.policy, agent)) return agentNotAllowed(current.policy.allowed_agents, ref)
     const cap = callerCap(current.policy, caller)
-    if (wider(this.host.chatMode(chatId), cap))
-      return bridgeError('mode_not_allowed', `This project now allows modes up to ${cap}. Nothing was sent.`, {
-        target: ref,
-      })
+    const chatMode = this.host.chatMode(chatId)
+    if (wider(chatMode, cap))
+      return bridgeError(
+        'mode_not_allowed',
+        `${bridgeChatModeRefusal({ chatMode, cap, projectLabel: current.policy.label })} Nothing was sent.`,
+        { target: ref },
+      )
     const root = getConversationExecutionRoot(chatId)
     if (!insideRoot(root?.worktreePath ?? root?.projectPath, current.policy.canonical_local_root))
       return bridgeError('project_not_allowed', 'The chat no longer runs inside the allowed project folder.', {

@@ -6,18 +6,27 @@
  * default policy (auto capped at auto, edits and checks on, commit, push, pull
  * requests, merge and deploy off; the action flags are recorded only, nothing
  * reads them yet). None is checked until the owner chooses.
+ *
+ * Each allowed project also picks its Highest mode: the widest mode the
+ * bridge may drive a chat there in. Full access asks for a confirmation
+ * first, and the row then carries a one-line note on what it lets through.
  */
 import { useEffect, useRef, useState } from 'react'
-import type { BridgeProjectSetup, BridgeProjectSetupRow } from '@shared/bridge'
+import { bridgeModeRiskNote, type BridgeProjectSetup, type BridgeProjectSetupRow } from '@shared/bridge'
+import { type RuntimeMode } from '@shared/provider-events'
 import {
   allShownAllowed,
+  BRIDGE_MODE_OPTIONS,
   BRIDGE_PROJECTS_CHANGED,
+  bridgeModeConfirm,
   bridgeProjectCountText,
   filterBridgeProjects,
   switchableBridgeProjects,
 } from './bridge-setup-model'
 import { Button } from '../ui/button'
 import { Checkbox } from '../ui/checkbox'
+import { Combobox } from '../ui/combobox'
+import { confirm } from '../ui/confirm'
 import { Input } from '../ui/input'
 import { createRendererLogger } from '../../logger'
 
@@ -69,6 +78,24 @@ export function BridgeProjectsPanel() {
     }
   }
 
+  /** A wider cap asks first; a narrower one takes power away and goes straight through. */
+  const setMode = async (project: BridgeProjectSetupRow, mode: RuntimeMode) => {
+    if (project.projectId === null || mode === project.maximumMode) return
+    const question = bridgeModeConfirm(project.name, mode)
+    if (question && !(await confirm(question))) return
+    setBusy(true)
+    setError(null)
+    try {
+      setSetup(await window.api.bridge.setProjectMode(project.projectId, mode))
+    } catch (err) {
+      log.warn('saving a bridge project mode failed', err)
+      setError(err instanceof Error ? err.message : 'Could not save the change.')
+    } finally {
+      setBusy(false)
+      announce()
+    }
+  }
+
   /** One write per project that changes, so a half-done run still leaves the list true. */
   const toggleShown = async (rows: readonly BridgeProjectSetupRow[], allowed: boolean) => {
     setBusy(true)
@@ -99,7 +126,8 @@ export function BridgeProjectsPanel() {
       <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
         <p className="m-0 px-[14px] pb-2.5 pt-3 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
           The bridge can find, open and message chats only in the projects you tick. Those chats run with your own
-          access to this Mac, in auto mode at most.
+          access to this Mac. Highest mode is the widest mode the bridge may drive a chat in there, and a chat that runs
+          wider is refused.
         </p>
         <div className="flex items-center gap-2 border-t border-[var(--border)] px-[14px] py-2">
           <Input
@@ -170,7 +198,23 @@ export function BridgeProjectsPanel() {
                         ? 'Folder not found'
                         : project.path}
                   </div>
+                  {project.maximumMode && bridgeModeRiskNote(project.maximumMode) && (
+                    <div className="mt-1 text-[11px] leading-4 text-[var(--warning)]">
+                      {bridgeModeRiskNote(project.maximumMode)}
+                    </div>
+                  )}
                 </label>
+                {project.maximumMode && !project.orphan && (
+                  <Combobox
+                    aria-label={`Highest mode for ${project.name}`}
+                    value={project.maximumMode}
+                    onValueChange={(next) => void setMode(project, next as RuntimeMode)}
+                    options={[...BRIDGE_MODE_OPTIONS]}
+                    searchable={false}
+                    disabled={busy}
+                    className="h-7 w-[150px] flex-none text-[12px]"
+                  />
+                )}
               </div>
             )
           })}

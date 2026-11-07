@@ -16,6 +16,7 @@ import {
   removeBridgeProject,
   setBridgeProjectAllowed,
   setBridgeProjectChecks,
+  setBridgeProjectMaximumMode,
 } from '../bridge/allowlist'
 import { bridgeDeviceLink, defaultDeviceLabel } from '../bridge/device-link'
 import { bridgeStopService, type BridgeStopService } from '../bridge/stop-service'
@@ -53,6 +54,14 @@ export function registerBridgeHandlers(host: BackendHost): void {
     if (typeof path !== 'string' || typeof allowed !== 'boolean') throw new Error('Expected { path, allowed }.')
     assertEnabled()
     setBridgeProjectAllowed(path, allowed)
+    bridgeDeviceLink().catalogChanged()
+    return setup()
+  })
+  host.handle(BridgeChannels.SET_PROJECT_MODE, (input: unknown) => {
+    const { projectId, mode } = (input ?? {}) as { projectId?: unknown; mode?: unknown }
+    if (typeof projectId !== 'string') throw new Error('Expected { projectId, mode }.')
+    assertEnabled()
+    setBridgeProjectMaximumMode(projectId, mode)
     bridgeDeviceLink().catalogChanged()
     return setup()
   })
