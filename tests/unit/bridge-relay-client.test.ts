@@ -8,7 +8,7 @@
 import { createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMigratedDb } from './helpers/test-db'
 
@@ -671,7 +671,8 @@ describe('BridgeDeviceLink', () => {
     expect(status.operator_command).toBe(
       `echo '${status.public_key}' | node '${operatorScriptPath()}' enroll '${MACHINE}' 'Work Mac' -`,
     )
-    expect(operatorScriptPath()).toMatch(/^\/.+\/scripts\/bridge-operator\.mjs$/)
+    expect(isAbsolute(operatorScriptPath())).toBe(true)
+    expect(operatorScriptPath().endsWith(join('scripts', 'bridge-operator.mjs'))).toBe(true)
 
     h.link.reconcile()
     expect(h.clients).toHaveLength(1)
