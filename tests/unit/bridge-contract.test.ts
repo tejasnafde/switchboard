@@ -18,7 +18,12 @@ import {
   bridgeInputHash,
   canonicalBridgeInput,
   defaultBridgeProjectPolicy,
+  BRIDGE_MODE_CHOICES,
+  bridgeChatModeRefusal,
   bridgeChecksLabel,
+  bridgeModeRiskNote,
+  bridgePolicyModesValid,
+  bridgeStartModeRefusal,
   emptyBridgeEvidence,
   instinctBridgeEnabled,
   parseBridgeCheckDefinitions,
@@ -56,8 +61,9 @@ describe('instinct_bridge flag', () => {
 })
 
 describe('contract', () => {
-  it('exposes exactly the seven tools', () => {
+  it('exposes exactly the eight tools', () => {
     expect([...BRIDGE_TOOL_NAMES].sort()).toEqual([
+      'list_agents',
       'list_projects',
       'list_recent_chats',
       'read_chat',
@@ -105,6 +111,36 @@ describe('resolveBridgeMode', () => {
       ok: false,
       code: 'mode_not_allowed',
     })
+  })
+})
+
+describe('the project mode cap', () => {
+  it('offers every runtime mode, narrowest first, and notes the risk of full access only', () => {
+    expect(BRIDGE_MODE_CHOICES).toEqual(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'])
+    expect(bridgeModeRiskNote('full-access')).toContain('no prompt')
+    for (const mode of BRIDGE_MODE_CHOICES) if (mode !== 'full-access') expect(bridgeModeRiskNote(mode)).toBeNull()
+  })
+
+  it('names the chat mode, the cap and the control the owner changes', () => {
+    expect(bridgeChatModeRefusal({ chatMode: 'full-access', cap: 'auto', projectLabel: 'lexsi' })).toBe(
+      'This chat runs in Full access. The bridge may drive chats in this project up to Auto. ' +
+        'Change Highest mode for lexsi in Settings > Labs, or start a new chat.',
+    )
+  })
+
+  it('names the mode a start asked for, and says plainly when it is not a mode', () => {
+    expect(bridgeStartModeRefusal({ requested: 'full-access', cap: 'sandbox', projectLabel: 'lexsi' })).toBe(
+      'Full access is wider than this project allows. The bridge may start chats in this project up to ' +
+        'Supervised. Change Highest mode for lexsi in Settings > Labs.',
+    )
+    expect(bridgeStartModeRefusal({ requested: 'yolo', cap: 'auto', projectLabel: 'lexsi' })).toContain(
+      'That is not a mode.',
+    )
+  })
+
+  it('accepts a policy whose default sits at or below its cap', () => {
+    expect(bridgePolicyModesValid({ default_mode: 'auto', maximum_mode: 'full-access' })).toBe(true)
+    expect(bridgePolicyModesValid({ default_mode: 'full-access', maximum_mode: 'auto' })).toBe(false)
   })
 })
 

@@ -658,6 +658,7 @@ export class ProviderRegistry implements PeerToolHost {
         busy: (chatId) => this.isBusy(chatId),
         pending: (chatId) => this.getPendingRequests(chatId),
       },
+      agentAvailable: (agent) => this.agentRunsHere(agent),
       // One reader for the process: its held git and pull request reads only
       // work while the same deps serve every poll.
       evidence: bridgeEvidenceReader(readPullRequestForBridge),

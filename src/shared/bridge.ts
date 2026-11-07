@@ -11,7 +11,7 @@
  * backend setting `labs.instinct_bridge` turns it on.
  */
 import type { SettingReader } from './limit-resume'
-import { RUNTIME_MODES, type RuntimeMode } from './provider-events'
+import { isRuntimeMode, RUNTIME_MODE_LABELS, RUNTIME_MODES, type RuntimeMode } from './provider-events'
 import type { AgentType } from './types'
 
 export const INSTINCT_BRIDGE_ENABLED = false
@@ -31,6 +31,7 @@ export function instinctBridgeEnabled(env: NodeJS.ProcessEnv, getSetting: Settin
 export const BRIDGE_TOOL_NAMES = [
   'search_chats',
   'list_projects',
+  'list_agents',
   'list_recent_chats',
   'start_chat',
   'send_to_chat',
@@ -141,6 +142,48 @@ export function resolveBridgeMode(
   return { ok: true, mode: mode as RuntimeMode }
 }
 
+/**
+ * The Highest mode choices, narrowest first, as Settings > Labs lists them:
+ * every runtime mode, in the one order `modeRank` already ranks them by. The
+ * owner decides how far the bridge may go in one project, and a wider chat is
+ * then refused rather than lowered.
+ */
+export const BRIDGE_MODE_CHOICES = RUNTIME_MODES
+
+/** The one-line risk note under a cap the owner should think about, or null. */
+export function bridgeModeRiskNote(mode: RuntimeMode): string | null {
+  return mode === 'full-access'
+    ? 'Full access lets the bridge drive chats here that run commands and change files with no prompt.'
+    : null
+}
+
+/**
+ * Why a chat is too wide for its project, in words that name the control.
+ * Used for every `mode_not_allowed` a chat's own mode causes, so the owner
+ * reads one sentence per fact and knows where to change it.
+ */
+export function bridgeChatModeRefusal(input: {
+  chatMode: RuntimeMode
+  cap: RuntimeMode
+  projectLabel: string
+}): string {
+  return (
+    `This chat runs in ${RUNTIME_MODE_LABELS[input.chatMode]}. ` +
+    `The bridge may drive chats in this project up to ${RUNTIME_MODE_LABELS[input.cap]}. ` +
+    `Change Highest mode for ${input.projectLabel} in Settings > Labs, or start a new chat.`
+  )
+}
+
+/** Why an asked-for mode is refused on a start, in the same words. */
+export function bridgeStartModeRefusal(input: { requested: unknown; cap: RuntimeMode; projectLabel: string }): string {
+  const asked = isRuntimeMode(input.requested) ? input.requested : null
+  const first = asked ? `${RUNTIME_MODE_LABELS[asked]} is wider than this project allows.` : 'That is not a mode.'
+  return (
+    `${first} The bridge may start chats in this project up to ${RUNTIME_MODE_LABELS[input.cap]}. ` +
+    `Change Highest mode for ${input.projectLabel} in Settings > Labs.`
+  )
+}
+
 /** A policy whose default mode is above its cap, or has an unknown mode, is not stored. */
 export function bridgePolicyModesValid(policy: Pick<BridgeProjectPolicy, 'default_mode' | 'maximum_mode'>): boolean {
   const cap = modeRank(policy.maximum_mode)
@@ -157,6 +200,8 @@ export interface BridgeProjectSetupRow {
   projectId: string | null
   /** An allowed policy no sidebar project resolves to; `path` is its stored root. */
   orphan: boolean
+  /** The project's Highest mode, or null while it is not allowed. */
+  maximumMode: RuntimeMode | null
 }
 
 export interface BridgeProjectSetup {
@@ -637,6 +682,84 @@ export function bridgeChecksLabel(summary: BridgeCheckSummary): string {
   }
 }
 
+// ─── Agents, accounts and models (`list_agents`) ────────────────
+//
+// The assistant cannot see the owner's accounts, so it could neither pick one
+// nor name a model it is sure exists. `list_agents` answers both, and
+// `pickBridgeAccount` is the rule `start_chat` applies when it is given no
+// account. Nothing here carries a credential, a config path or an email the
+// account row does not already show in the picker.
+
+/** A five-hour window at or above this is treated as no room. */
+export const BRIDGE_ACCOUNT_BUSY_PERCENT = 90
+
+/** One usage window as the bridge reports it: a percent, and when it refills. */
+export interface BridgeUsageWindow {
+  /** 0-100, or null when this desktop could not read it. */
+  used_percent: number | null
+  /** ISO 8601, or null when the provider named no reset. */
+  resets_at: string | null
+}
+
+/**
+ * One account of one agent. `usage` is `ok` once a window was read,
+ * `not_applicable` for an account with no subscription window (an API key),
+ * and `unreadable` for anything this desktop could not read.
+ */
+export interface BridgeAccountView {
+  account_id: string
+  name: string
+  usage: 'ok' | 'not_applicable' | 'unreadable'
+  session: BridgeUsageWindow
+  weekly: BridgeUsageWindow
+}
+
+export interface BridgeAgentRow {
+  agent: AgentType
+  label: string
+  available: boolean
+  models: Array<{ id: string; name: string }>
+  accounts: BridgeAccountView[]
+  /** The account `start_chat` would pick with no `account` argument, or null. */
+  would_pick: string | null
+}
+
+/** What `pickBridgeAccount` ranks: the five-hour and weekly windows of one account. */
+export interface BridgeAccountRoom {
+  account_id: string
+  session_percent: number | null
+  weekly_percent: number | null
+}
+
+/**
+ * The account with the most room, or null when the list is empty. An account
+ * whose five-hour window was READ and is below `BRIDGE_ACCOUNT_BUSY_PERCENT`
+ * comes first; with none of those, every account is ranked together. A window
+ * this desktop could not read never counts as room, so a signed-out account
+ * never beats one that answered. Inside a group the emptiest weekly window
+ * wins, an unread weekly window ranks last, and equal readings keep the first
+ * of the list, so the answer never flaps.
+ */
+export function pickBridgeAccount(accounts: readonly BridgeAccountRoom[]): string | null {
+  if (accounts.length === 0) return null
+  const free = accounts.filter((a) => a.session_percent !== null && a.session_percent < BRIDGE_ACCOUNT_BUSY_PERCENT)
+  const group = free.length > 0 ? free : accounts
+  let best = group[0]
+  for (const account of group.slice(1)) if (weeklyRoom(account) > weeklyRoom(best)) best = account
+  return best.account_id
+}
+
+/**
+ * How empty a weekly window is, 0 to 100. An unread window counts as full, so
+ * an account this desktop could not read never beats one it did read. An
+ * account with no subscription window reads as unread here for the same
+ * reason; `list_agents` reports it as `not_applicable` so the assistant can
+ * ask for it by name.
+ */
+function weeklyRoom(account: BridgeAccountRoom): number {
+  return account.weekly_percent === null ? 0 : 100 - account.weekly_percent
+}
+
 // ─── Errors ─────────────────────────────────────────────────────
 
 export const BRIDGE_ERROR_CODES = [
@@ -710,6 +833,8 @@ export interface BridgeError {
   /** Set on `agent_unavailable`: what the project allows instead. */
   agent_choices?: AgentType[]
   model_choices?: string[]
+  /** Set when an `account` argument named nothing, or no account had room: the accounts that agent has. */
+  account_choices?: Array<{ account_id: string; name: string }>
   /** Set on a rejected call: true when the action never reached the machine. */
   non_delivery_confirmed?: boolean
   /** Set when an answer was too large to send: its size and the limit, in bytes. */

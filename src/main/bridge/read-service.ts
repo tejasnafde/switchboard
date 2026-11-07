@@ -19,15 +19,17 @@ import {
   bridgeError,
   emptyBridgeEvidence,
   publicProjectView,
+  type BridgeAgentRow,
   type BridgeChatRef,
   type BridgeChatWorkState,
   type BridgeError,
   type BridgeEvidence,
 } from '@shared/bridge'
+import { modelsForAgent } from '@shared/models'
 import { MESSAGE_SEARCH_LIMIT, SNIPPET_MARK_CLOSE, SNIPPET_MARK_OPEN } from '@shared/message-search'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
 import type { ProviderSessionStatus, RuntimeEvent } from '@shared/provider-events'
-import { isAgentType, type AgentType, type ChatMessage } from '@shared/types'
+import { agentLabel, isAgentType, type AgentType, type ChatMessage } from '@shared/types'
 import {
   getConversationById,
   getDb,
@@ -44,6 +46,7 @@ import { searchChatTitlesInDatabase, searchMessagesInDatabase, type SearchResult
 import { maskStoredText } from '../db/secret-mask'
 import { loadConversationHistoryWindow } from '../conversations/history'
 import { createMainLogger } from '../logger'
+import { chooseBridgeAccount, readBridgeAccounts } from './accounts'
 import { bridgeRealpath } from './allowlist'
 import { jsonBytes, previewText, windowText } from './read-budget'
 import { resolveLabel } from './resolve-label'
@@ -93,6 +96,10 @@ export interface BridgeLiveState {
 
 export interface BridgeReadDeps {
   live: BridgeLiveState
+  /** Whether an agent can start on this desktop. */
+  agentAvailable: (agent: AgentType) => Promise<boolean>
+  /** Every enabled account of one agent with its usage. Omitted: the live reader. */
+  accounts?: (agent: AgentType) => Promise<BridgeAgentRow['accounts']>
   /** This desktop's stable machine id. */
   machineId: () => string
   /** Measured facts about the chat's checkout, pull requests and checks. Omitted: everything is `not_measured`. */
@@ -409,6 +416,40 @@ export class BridgeReadService {
       agents: bridgeProjectAgents(policy),
     }))
     return { ok: true, value: { ...base, projects } }
+  }
+
+  /**
+   * The agents the allowed projects offer, each with its models and its
+   * accounts, and which account a start would take. `project` narrows it to
+   * one project's allowed agents; with none, every allowed project's agents
+   * are merged. Reading an account's usage is a network or RPC call, so the
+   * agents are read in parallel and a reading that fails is reported as
+   * unreadable rather than left out.
+   */
+  async listAgents(input: { project?: string } = {}): Promise<BridgeResult<ListBase & { agents: BridgeAgentRow[] }>> {
+    const machineId = this.deps.machineId()
+    let scope = this.allowed(machineId)
+    if (input.project !== undefined) {
+      const project = this.resolveProject(scope, input.project)
+      if (!project.ok) return project
+      scope = [project.value]
+    }
+    const names = [...new Set(scope.flatMap((a) => bridgeProjectAgents(a.policy)))].sort()
+    const accountsOf = this.deps.accounts ?? ((agent: AgentType) => readBridgeAccounts(agent))
+    const agents = await Promise.all(
+      names.map(async (agent): Promise<BridgeAgentRow> => {
+        const [canStart, accounts] = await Promise.all([this.deps.agentAvailable(agent), accountsOf(agent)])
+        return {
+          agent,
+          label: agentLabel(agent),
+          available: canStart,
+          models: modelsForAgent(agent).map((m) => ({ id: m.id, name: m.label })),
+          accounts,
+          would_pick: chooseBridgeAccount(accounts),
+        }
+      }),
+    )
+    return { ok: true, value: { ...this.listBase(machineId), agents } }
   }
 
   /** An exact project id, else its label (exact, then fuzzy). */

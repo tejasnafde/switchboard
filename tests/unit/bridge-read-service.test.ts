@@ -51,6 +51,7 @@ import {
   listBridgeProjectSetup,
   removeBridgeProject,
   setBridgeProjectAllowed,
+  setBridgeProjectMaximumMode,
 } from '../../src/main/bridge/allowlist'
 import { buildBridgeTools } from '../../src/main/mcp/bridge-tools'
 import type { BridgeDeliveryService } from '../../src/main/bridge/delivery-service'
@@ -100,7 +101,7 @@ beforeEach(() => {
     busy: () => false,
     pending: (id) => live.pending.get(id) ?? [],
   }
-  service = new BridgeReadService({ live: state, machineId: () => MACHINE })
+  service = new BridgeReadService({ live: state, machineId: () => MACHINE, agentAvailable: async () => true })
   addProject(ALLOWED, 'Raves site')
   addProject(OTHER, 'Other')
   setBridgeProjectAllowed(ALLOWED, true, MACHINE)
@@ -152,6 +153,32 @@ describe('the allowlist', () => {
   it('drops the policy when the project leaves the sidebar', () => {
     removeProject(ALLOWED)
     expect(listBridgeProjectPolicies()).toEqual([])
+  })
+
+  it('stores the Highest mode the owner picks and shows it on the setup row', () => {
+    const id = bridgeProjectId(MACHINE, realpathSync.native(ALLOWED))
+    expect(listBridgeProjectSetup(MACHINE).find((p) => p.projectId === id)?.maximumMode).toBe('auto')
+    setBridgeProjectMaximumMode(id, 'full-access')
+    expect(listBridgeProjectSetup(MACHINE).find((p) => p.projectId === id)?.maximumMode).toBe('full-access')
+    expect(ok(service.listProjects()).projects[0]).toMatchObject({ maximum_mode: 'full-access', default_mode: 'auto' })
+  })
+
+  it('lowers a default mode that a narrower cap would leave above it', () => {
+    const id = bridgeProjectId(MACHINE, realpathSync.native(ALLOWED))
+    setBridgeProjectMaximumMode(id, 'plan')
+    expect(ok(service.listProjects()).projects[0]).toMatchObject({ maximum_mode: 'plan', default_mode: 'plan' })
+  })
+
+  it('shows no mode for a project that is not allowed, and keeps auto on an older policy', () => {
+    const row = listBridgeProjectSetup(MACHINE).find((p) => p.name === 'Other')
+    expect(row).toMatchObject({ allowed: false, maximumMode: null })
+    expect(listBridgeProjectPolicies()[0].maximum_mode).toBe('auto')
+  })
+
+  it('refuses a mode that is not one, and a project that is not allowed', () => {
+    const id = bridgeProjectId(MACHINE, realpathSync.native(ALLOWED))
+    expect(() => setBridgeProjectMaximumMode(id, 'yolo')).toThrow(/not a runtime mode/)
+    expect(() => setBridgeProjectMaximumMode('bproj_nope', 'auto')).toThrow(/not on the bridge allowlist/)
   })
 
   it("ignores another machine's policy", () => {
@@ -486,6 +513,71 @@ describe('read_chat', () => {
       const after = ok(await service.readChat({ chat: 't1', since: before.cursor }))
       expect(after.unchanged).toBe(false)
     }
+  })
+})
+
+describe('list_agents', () => {
+  function agentsService(): BridgeReadService {
+    return new BridgeReadService({
+      live: { status: () => null, busy: () => false, pending: () => [] },
+      machineId: () => MACHINE,
+      agentAvailable: async (agent) => agent === 'claude-code',
+      accounts: async (agent) => [
+        {
+          account_id: `${agent}-work`,
+          name: 'Work',
+          usage: 'ok',
+          session: { used_percent: 95, resets_at: '2026-11-07T18:00:00.000Z' },
+          weekly: { used_percent: 10, resets_at: '2026-11-11T18:00:00.000Z' },
+        },
+        {
+          account_id: `${agent}-home`,
+          name: 'Home',
+          usage: 'ok',
+          session: { used_percent: 20, resets_at: '2026-11-07T19:00:00.000Z' },
+          weekly: { used_percent: 60, resets_at: '2026-11-11T18:00:00.000Z' },
+        },
+      ],
+    })
+  }
+
+  function allowAgents(agents: string[]) {
+    const [policy] = listBridgeProjectPolicies()
+    const { revision: _r, updated_at: _u, ...base } = policy
+    saveBridgeProjectPolicy({ ...base, allowed_agents: agents as never })
+  }
+
+  it('names each allowed agent with its models, its accounts and the account a start would take', async () => {
+    allowAgents(['claude-code'])
+    const value = ok(await agentsService().listAgents())
+    expect(value.agents).toHaveLength(1)
+    const [agent] = value.agents
+    expect(agent.agent).toBe('claude-code')
+    expect(agent.label.length).toBeGreaterThan(0)
+    expect(agent.available).toBe(true)
+    expect(agent.models.length).toBeGreaterThan(0)
+    expect(agent.models.every((m) => m.id.length > 0 && m.name.length > 0)).toBe(true)
+    expect(agent.accounts.map((a) => a.account_id)).toEqual(['claude-code-work', 'claude-code-home'])
+    // The work account is over 90 percent for five hours, so the home one wins.
+    expect(agent.would_pick).toBe('claude-code-home')
+  })
+
+  it('reports an agent that cannot start here, and carries no local path', async () => {
+    allowAgents(['claude-code', 'codex'])
+    const value = ok(await agentsService().listAgents())
+    expect(value.agents.map((a) => [a.agent, a.available])).toEqual([
+      ['claude-code', true],
+      ['codex', false],
+    ])
+    expect(JSON.stringify(value)).not.toContain(ROOT)
+  })
+
+  it('narrows to one project and refuses a project that is not allowed', async () => {
+    allowAgents(['claude-code'])
+    expect(ok(await agentsService().listAgents({ project: 'Raves site' })).agents).toHaveLength(1)
+    const refused = await agentsService().listAgents({ project: 'Other' })
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error.code).toBe('project_not_allowed')
   })
 })
 

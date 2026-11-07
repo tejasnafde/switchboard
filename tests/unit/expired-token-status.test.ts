@@ -107,6 +107,19 @@ describe('fetchClaudeUsage with an expired token', () => {
     ])
   })
 
+  it('a background read spawns no CLI and reads the keychain once, however stale the token', async () => {
+    readClaudeCredential.mockResolvedValue(found(Date.now() - 16 * HOUR))
+    const fetchMock = vi.fn()
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const usage = await fetchClaudeUsage('inst', env, '/tmp/x', { background: true })
+    expect(withoutTurn).not.toHaveBeenCalled()
+    expect(withTurn).not.toHaveBeenCalled()
+    expect(readClaudeCredential.mock.calls.map((c) => c[1])).toEqual([{ fresh: undefined, owner: 'inst' }])
+    expect(usage.status).toBe('refresh-pending')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('reports signed in, usage after the next chat, when the CLI did not refresh', async () => {
     readClaudeCredential.mockResolvedValue(found(Date.now() - 16 * HOUR))
     const fetchMock = vi.fn()

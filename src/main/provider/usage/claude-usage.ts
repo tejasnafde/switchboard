@@ -164,7 +164,7 @@ export async function fetchClaudeUsage(
   instanceId: string,
   env: Record<string, string>,
   oauthDir: string | null,
-  opts: { force?: boolean; refreshWithTurn?: boolean } = {},
+  opts: { force?: boolean; refreshWithTurn?: boolean; background?: boolean } = {},
 ): Promise<ProviderUsage> {
   const now = Date.now()
   const result = base(instanceId, now)
@@ -188,7 +188,9 @@ export async function fetchClaudeUsage(
     // on a token that had not expired locally. The no-model path only helps
     // when the CLI itself considers the token expired.
     const expired = providerAuthState({ credential: credential.credential, nowMs: now }) === 'refresh-pending'
-    if (opts.refreshWithTurn || expired) {
+    // A background read never spawns the CLI and never reads the keychain
+    // again: a stale token simply reads as refresh-pending.
+    if (opts.refreshWithTurn || (expired && !opts.background)) {
       await (opts.refreshWithTurn ? refreshClaudeTokenWithTurn(env) : refreshClaudeTokenWithoutTurn(env))
       credential = await readClaudeCredential(configDir, { fresh: true, owner: instanceId })
     }

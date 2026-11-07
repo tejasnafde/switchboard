@@ -626,6 +626,8 @@ export const BridgeChannels = {
   LIST_PROJECTS: 'bridge:list-projects',
   /** ({ path, allowed }) → the same as LIST_PROJECTS */
   SET_PROJECT_ALLOWED: 'bridge:set-project-allowed',
+  /** ({ projectId, mode }) → the same as LIST_PROJECTS; the widest mode the bridge may drive a chat there in */
+  SET_PROJECT_MODE: 'bridge:set-project-mode',
   /** (projectId) → the same as LIST_PROJECTS; works when the folder is gone */
   REMOVE_PROJECT: 'bridge:remove-project',
   /** () → BridgeDeviceStatus: this desktop's enrollment and relay connection */

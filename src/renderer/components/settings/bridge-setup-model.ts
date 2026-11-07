@@ -3,7 +3,13 @@
  * sorts and counts, and what each setup step shows. Pure, so the panels only
  * render.
  */
-import type { BridgeDeviceStatus, BridgeProjectSetupRow } from '@shared/bridge'
+import {
+  BRIDGE_MODE_CHOICES,
+  bridgeModeRiskNote,
+  type BridgeDeviceStatus,
+  type BridgeProjectSetupRow,
+} from '@shared/bridge'
+import { RUNTIME_MODE_LABELS, type RuntimeMode } from '@shared/provider-events'
 
 /** The projects panel fires this after a save, so the setup checklist re-reads its count. */
 export const BRIDGE_PROJECTS_CHANGED = 'sb-bridge-projects-changed'
@@ -44,6 +50,27 @@ export function switchableBridgeProjects(rows: readonly BridgeProjectSetupRow[])
 export function allShownAllowed(rows: readonly BridgeProjectSetupRow[]): boolean {
   const switchable = switchableBridgeProjects(rows)
   return switchable.length > 0 && switchable.every((row) => row.allowed)
+}
+
+/** The Highest mode picker's rows, narrowest first, as the shared list orders them. */
+export const BRIDGE_MODE_OPTIONS = BRIDGE_MODE_CHOICES.map((value) => ({ value, label: RUNTIME_MODE_LABELS[value] }))
+
+/**
+ * What the owner must confirm before a wider cap is stored, or null when the
+ * change needs no question. Only widening asks: narrowing takes power away.
+ */
+export function bridgeModeConfirm(
+  project: string,
+  next: RuntimeMode,
+): { title: string; body: string; confirmLabel: string; destructive: boolean } | null {
+  const note = bridgeModeRiskNote(next)
+  if (note === null) return null
+  return {
+    title: `Let the bridge use ${RUNTIME_MODE_LABELS[next]} in ${project}?`,
+    body: `${note} Anything the bridge sends runs with your own access to this Mac.`,
+    confirmLabel: `Use ${RUNTIME_MODE_LABELS[next]}`,
+    destructive: true,
+  }
 }
 
 export type BridgeStepState = 'done' | 'todo' | 'unknown'

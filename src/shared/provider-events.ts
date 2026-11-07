@@ -35,6 +35,19 @@ export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-a
 export const RUNTIME_MODES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'auto', 'full-access']
 
 /**
+ * The name the user reads for each mode. One term for one thing: the mode
+ * chip, the settings pickers and the backend's refusals all say the same
+ * word, so a refusal names a control the owner can find.
+ */
+export const RUNTIME_MODE_LABELS: Readonly<Record<RuntimeMode, string>> = {
+  plan: 'Plan',
+  sandbox: 'Supervised',
+  'accept-edits': 'Auto-accept edits',
+  auto: 'Auto',
+  'full-access': 'Full access',
+}
+
+/**
  * Error text of a session start the user stopped before it finished. Errors
  * cross the transport as strings, so clients match on this to treat it as a
  * stop rather than a failure.

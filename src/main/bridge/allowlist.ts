@@ -5,18 +5,21 @@
  * under its realpath; taking it off deletes the policy by id, so a policy
  * whose folder moved or left the sidebar can still be removed. Nothing is
  * allowed until the owner chooses. Reached only through the admin-scoped
- * `bridge:*` channels. The same file holds the owner's named checks per
- * project and the newest recorded run of each.
+ * `bridge:*` channels. The same file holds the owner's Highest mode per
+ * project (the widest mode the bridge may drive a chat there in), the named
+ * checks and the newest recorded run of each.
  */
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import {
+  bridgePolicyModesValid,
   defaultBridgeProjectPolicy,
   parseBridgeCheckDefinitions,
   type BridgeCheckResultRow,
   type BridgeProjectChecksRow,
   type BridgeProjectSetupRow,
 } from '@shared/bridge'
+import { isRuntimeMode, RUNTIME_MODES } from '@shared/provider-events'
 import {
   bridgeCheckDefinitionHash,
   bridgeCheckOutcome,
@@ -64,16 +67,18 @@ export function bridgeRealpath(path: string): string | null {
  */
 export function listBridgeProjectSetup(machineId = hubInstallId()): BridgeProjectSetupRow[] {
   const policies = listBridgeProjectPolicies().filter((p) => p.machine_id === machineId)
-  const allowedIds = new Set(policies.map((p) => p.project_id))
+  const capById = new Map(policies.map((p) => [p.project_id, p.maximum_mode]))
   const rows: BridgeProjectSetupRow[] = getProjects().map((project) => {
     const root = bridgeRealpath(project.path)
     const projectId = root === null ? null : bridgeProjectId(machineId, root)
+    const cap = projectId === null ? undefined : capById.get(projectId)
     return {
       path: project.path,
       name: project.name,
-      allowed: projectId !== null && allowedIds.has(projectId),
+      allowed: cap !== undefined,
       projectId,
       orphan: false,
+      maximumMode: cap ?? null,
     }
   })
   const shown = new Set(rows.map((r) => r.projectId))
@@ -85,6 +90,7 @@ export function listBridgeProjectSetup(machineId = hubInstallId()): BridgeProjec
       allowed: true,
       projectId: policy.project_id,
       orphan: true,
+      maximumMode: policy.maximum_mode,
     })
   }
   return rows
@@ -126,6 +132,24 @@ export function setBridgeProjectChecks(projectId: string, checks: unknown): void
   saveBridgeProjectPolicy({ ...base, checks: next })
   flagBridgeCheckDefinitionsChanged(projectId, next.map(bridgeCheckDefinitionHash))
   log.info('bridge project checks saved', { projectId, count: next.length })
+}
+
+/**
+ * Saves the Highest mode of one allowed project: the widest mode the bridge
+ * may drive a chat there in. A default mode above the new cap is lowered with
+ * it, so a stored policy is always valid. An old policy keeps the mode it was
+ * stored with, since nothing here rewrites a project the owner did not touch.
+ */
+export function setBridgeProjectMaximumMode(projectId: string, mode: unknown): void {
+  if (typeof mode !== 'string' || !isRuntimeMode(mode)) throw new Error('That is not a runtime mode.')
+  const policy = getBridgeProjectPolicy(projectId)
+  if (!policy) throw new Error('That project is not on the bridge allowlist.')
+  const { revision: _revision, updated_at: _updatedAt, ...base } = policy
+  const lowered = RUNTIME_MODES.indexOf(policy.default_mode) > RUNTIME_MODES.indexOf(mode) ? mode : policy.default_mode
+  const next = { ...base, maximum_mode: mode, default_mode: lowered }
+  if (!bridgePolicyModesValid(next)) throw new Error('That mode cannot be stored for this project.')
+  saveBridgeProjectPolicy(next)
+  log.info('bridge project maximum mode saved', { projectId, mode })
 }
 
 /** Takes a project off the allowlist by id, with no folder lookup. */

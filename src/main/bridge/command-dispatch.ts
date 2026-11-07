@@ -4,7 +4,7 @@
  * The relay resolved the machine, the project and the chat, reserved the call
  * and sent one frame; this module checks the frame's shape, runs the named
  * tool through the same typed services the local MCP tools use
- * (`read-service.ts` for the four reads, `delivery-service.ts` for the three
+ * (`read-service.ts` for the five reads, `delivery-service.ts` for the three
  * mutations) and returns the body of the `result` frame. It starts no chat of
  * its own and holds no provider state.
  *
@@ -185,6 +185,11 @@ export class BridgeCommandDispatcher {
     switch (command.tool) {
       case 'list_projects':
         return this.answer(this.deps.reads.listProjects())
+      case 'list_agents': {
+        if (args.project !== undefined && typeof args.project !== 'string')
+          return this.deny(bridgeError('invalid_request', 'project must be a string.'))
+        return this.answer(await this.deps.reads.listAgents({ project: args.project as string | undefined }))
+      }
       case 'list_recent_chats': {
         const limit = parseBridgeLimit(args.limit)
         if (limit === null) return this.deny(badLimit())
@@ -211,6 +216,7 @@ export class BridgeCommandDispatcher {
           (typeof args.project === 'string' && args.project.trim() ? null : 'project is required.') ??
           optionalString(args, 'agent') ??
           optionalString(args, 'model') ??
+          optionalString(args, 'account') ??
           optionalString(args, 'mode')
         if (shape) return this.deny(bridgeError('invalid_request', shape))
         return this.answer(
@@ -219,6 +225,7 @@ export class BridgeCommandDispatcher {
             message: args.message as string,
             agent: args.agent as string | undefined,
             model: args.model as string | undefined,
+            account: args.account as string | undefined,
             mode: args.mode as string | undefined,
             idempotency_key: command.call_id,
           }),
