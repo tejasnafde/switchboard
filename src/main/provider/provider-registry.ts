@@ -1146,8 +1146,11 @@ export class ProviderRegistry implements PeerToolHost {
    * still starting (its launch owns the start) or when it runs elsewhere.
    */
   private storedChildStartOpts(childId: string): SessionStartOpts | null {
+    if (!this.hubChildrenOn()) return null
     const child = getHubChild(childId)
     if (!child || child.phase !== 'open' || child.machineId) return null
+    // An archived chat is out of the user's list; the auto-resume refuses one too.
+    if (isConversationArchived(childId)) return null
     const row = getConversationById(childId)
     const root = getConversationExecutionRoot(childId)
     const cwd = root?.worktreePath ?? root?.projectPath ?? row?.project_path
@@ -4193,7 +4196,10 @@ export class ProviderRegistry implements PeerToolHost {
                   if (child.machineId && !this.remoteControlOf(child)) return toolText(HUB_REMOTE_STOP_LATER_TEXT, true)
                   // The stop drops what waits behind the turn, so the parent
                   // is given the text back rather than losing it silently.
-                  const dropped = this.listQueuedTurns(child.childId)
+                  // Under the id the session runs under, as the stop reads it:
+                  // the ledger is keyed by that id, not by the root. A child on
+                  // another machine holds its queue there, so none is named.
+                  const dropped = this.listQueuedTurns(this.liveSessionId(child.childId) ?? child.childId)
                     .map((q) => q.text.trim())
                     .filter(Boolean)
                   let ran: boolean

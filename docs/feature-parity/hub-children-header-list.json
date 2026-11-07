@@ -67,7 +67,7 @@
       "tests/unit/hub-stop-registry.test.ts: Stop on a parent ends its own turn only and writes no wake, while Stop all still stops six children in parallel, holds the parent and tells it.",
       "tests/unit/hub-limits-registry.test.ts: Resume sends the hub's own turn to a stopped child and the limit path to a limited one, refuses a chat that is not a child and one that already works; move_child moves a child no limit stopped (with the hub's resume text, not the limit's), and a move during a turn runs at that turn's end.",
       "tests/unit/hub-rules.test.ts: moveChildProblem with no limit, canResumeHubChild, readHubAutoMovePercent (off unless 50-99) and autoMoveTarget (emptiest account, the 10-point margin, no reading, nothing under the threshold).",
-      "tests/unit/hub-stop-registry.test.ts: a child with no session starts from its stored row for its parent's message and for the row Resume, a child still starting is left to its launch, and interrupt_child answers with the text of the messages the stop dropped.",
+      "tests/unit/hub-stop-registry.test.ts: a child with no session starts from its stored row for its parent's message and for the row Resume, never above the mode its parent granted, and not when it is archived or still starting; interrupt_child answers with the text of the messages the stop dropped.",
       "tests/unit/hub-actions.test.ts: Nudge appends its chip to the draft it finds and focuses the composer at the end, after the chip."
     ],
     "hardware": [

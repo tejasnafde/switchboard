@@ -40,6 +40,7 @@ const db = vi.hoisted(() => ({
   sessionIds: new Map<string, string>(),
   /** `conversations.runtime_mode`, written even with no session. */
   modes: new Map<string, string>(),
+  archived: new Set<string>(),
 }))
 
 vi.mock('../../src/main/db/database', () => ({
@@ -67,7 +68,7 @@ vi.mock('../../src/main/db/database', () => ({
   commitConversationProviderSwitch: () => {},
   getDb: () => ({}),
   deleteUserMessage: () => {},
-  isConversationArchived: () => false,
+  isConversationArchived: (id: string) => db.archived.has(id),
   openChildParentId: (id: string) => db.children.find((c) => c.childId === id)?.parentId ?? null,
   listHubChildrenInPhase: (phase: string) => db.children.filter((c) => c.phase === phase),
   listHubChildren: (parentId: string) => db.children.filter((c) => c.parentId === parentId),
@@ -170,6 +171,7 @@ async function setup(childCount = 2) {
   db.held.clear()
   db.sessionIds.clear()
   db.modes.clear()
+  db.archived.clear()
   const host = new FakeHost()
   const adapter = new Adapter()
   const mcp = fakeMcp()
@@ -422,6 +424,22 @@ describe('a child with no session', () => {
     })
   })
 
+  it('leaves an archived chat and a child of another phase alone', async () => {
+    const { host, registry, adapter } = await setup()
+    db.archived.add('child1')
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    const before = adapter.starts.length
+    await expect(
+      registry.deliverPeerMessage({
+        fromThreadId: 'parent1',
+        targetThreadId: 'child1',
+        text: 'Go on.',
+        initiator: 'agent',
+      }),
+    ).rejects.toThrow(/is not running/)
+    expect(adapter.starts).toHaveLength(before)
+  })
+
   it('leaves a child of another phase alone', async () => {
     const { host, registry, adapter } = await setup()
     db.children[0]!.phase = 'starting'
@@ -440,7 +458,7 @@ describe('a child with no session', () => {
 })
 
 describe('interrupt_child and the messages behind the turn', () => {
-  it('gives the parent back what the stop dropped', async () => {
+  it('gives the parent back what the stop dropped, under the id the session runs under', async () => {
     const { adapter, busy, event, tool } = await setup()
     busy('child1')
     event({ type: 'turn.queued', threadId: 'child1', messageId: 'q1', text: 'Also update the changelog.' })
