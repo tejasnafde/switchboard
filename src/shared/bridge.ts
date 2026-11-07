@@ -714,14 +714,16 @@ export interface BridgeAccountRoom {
 
 /**
  * The account with the most room, or null when the list is empty. An account
- * whose five-hour window is below `BRIDGE_ACCOUNT_BUSY_PERCENT` comes first;
- * with none of those, every account is ranked together. Inside a group the
- * emptiest weekly window wins, an unread weekly window ranks last, and equal
- * readings keep the first of the list, so the answer never flaps.
+ * whose five-hour window was READ and is below `BRIDGE_ACCOUNT_BUSY_PERCENT`
+ * comes first; with none of those, every account is ranked together. A window
+ * this desktop could not read never counts as room, so a signed-out account
+ * never beats one that answered. Inside a group the emptiest weekly window
+ * wins, an unread weekly window ranks last, and equal readings keep the first
+ * of the list, so the answer never flaps.
  */
 export function pickBridgeAccount(accounts: readonly BridgeAccountRoom[]): string | null {
   if (accounts.length === 0) return null
-  const free = accounts.filter((a) => a.session_percent === null || a.session_percent < BRIDGE_ACCOUNT_BUSY_PERCENT)
+  const free = accounts.filter((a) => a.session_percent !== null && a.session_percent < BRIDGE_ACCOUNT_BUSY_PERCENT)
   const group = free.length > 0 ? free : accounts
   let best = group[0]
   for (const account of group.slice(1)) if (weeklyRoom(account) > weeklyRoom(best)) best = account

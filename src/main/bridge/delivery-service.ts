@@ -55,6 +55,7 @@ import {
   getConversationById,
   getConversationExecutionRoot,
   getConversationForkMetadata,
+  getConversationProviderInstanceId,
   getDb,
   listBridgeOrigins,
   readBridgeStopRecord,
@@ -69,10 +70,11 @@ import {
   type BridgeCallRecord,
   type BridgeOriginSource,
 } from '../db/database'
+import { getProviderInstanceFull } from '../db/provider-instances'
 import { turnAcceptanceStateByOrigin } from '../db/turn-acceptance'
 import { createMainLogger } from '../logger'
 import type { SessionStartOpts } from '../provider/types'
-import { chooseBridgeAccount, readBridgeAccounts, type BridgeAccountDeps } from './accounts'
+import { bridgeAccountById, chooseBridgeAccount, readBridgeAccounts, type BridgeAccountDeps } from './accounts'
 import { bridgeCheckService } from './check-service'
 import { bridgeProjectAgents, type AllowedProject, type BridgeReadService, type BridgeResult } from './read-service'
 import { resolveLabel } from './resolve-label'
@@ -357,6 +359,20 @@ export class BridgeDeliveryService {
     const still = this.reads.allowed(machineId).find((a) => a.policy.project_id === policy.project_id)
     if (!still) return fail(bridgeError('project_not_allowed', 'That project is no longer allowed.', { target }))
     if (agentDenied(still.policy, agent)) return fail(agentNotAllowed(still.policy.allowed_agents, target))
+    // Reading the accounts takes seconds, so the cap is read again here: a
+    // Highest mode the owner narrowed meanwhile refuses before any session
+    // starts, not only before the turn goes in.
+    const capNow = callerCap(still.policy, caller)
+    if (wider(mode.mode, capNow))
+      return fail(
+        bridgeError(
+          'mode_not_allowed',
+          bridgeStartModeRefusal({ requested: mode.mode, cap: capNow, projectLabel: still.policy.label }),
+          {
+            target,
+          },
+        ),
+      )
     // Checked and claimed with no await between, so two starts cannot both pass.
     const running = this.activeBridgeChat(machineId)
     if (running)
@@ -468,24 +484,30 @@ export class BridgeDeliveryService {
   }
 
   /**
-   * The account a start runs on. An `account` argument is an account id, then
-   * the name the owner gave it (exact, then fuzzy), so the assistant can pass
-   * back what `list_agents` showed it. With none, the account with the most
-   * room wins (`pickBridgeAccount`): a five-hour window under 90 percent
-   * first, then the emptiest weekly window. An agent with no enabled account
-   * resolves to null, and the session start falls back as it always did.
+   * The account a start asks for. An `account` argument is an account id,
+   * which costs no usage read, then the name the owner gave it (exact, then
+   * fuzzy), so the assistant can pass back what `list_agents` showed it. With
+   * none, the account with the most room wins (`pickBridgeAccount`): a
+   * five-hour window that was read and is under 90 percent first, then the
+   * emptiest weekly window. An agent with no enabled account resolves to
+   * null, and the session start falls back as it always did. What the session
+   * actually resolved to is what the receipt names (`answer`).
    */
   private async resolveAccount(
     agent: AgentType,
     asked: string | undefined,
     target: { project_id: string },
   ): Promise<BridgeResult<{ account_id: string; name: string } | null>> {
+    // An exact id answers before any usage is read: naming an account must
+    // not probe every other account of that agent.
+    if (asked !== undefined) {
+      const byId = bridgeAccountById(agent, asked, this.accountDeps)
+      if (byId) return { ok: true, value: byId }
+    }
     const accounts = await this.accounts(agent)
     if (accounts.length === 0) return { ok: true, value: null }
     const plain = (a: BridgeAccountView) => ({ account_id: a.account_id, name: a.name })
     if (asked !== undefined) {
-      const byId = accounts.find((a) => a.account_id === asked)
-      if (byId) return { ok: true, value: plain(byId) }
       const found = resolveLabel(accounts, (a) => a.name, asked)
       if (found.kind === 'one') return { ok: true, value: plain(found.item) }
       if (found.kind === 'ambiguous')
@@ -793,8 +815,9 @@ export class BridgeDeliveryService {
           message_id: echoMessageId(target.origin),
           agent: target.agent,
           model: target.model,
-          // A record stored before the account was chosen here has none.
-          account: target.account ?? null,
+          // What the chat runs on, not what the start asked for: the registry
+          // falls back when the chosen account is gone, and a resume uses that row.
+          account: this.accountOfChat(target.chat_id) ?? target.account ?? null,
           mode: target.mode,
         },
       }
@@ -881,6 +904,14 @@ export class BridgeDeliveryService {
         target: ref,
       })
     return null
+  }
+
+  /** The account a chat is stored as running on, with the name the owner gave it. */
+  private accountOfChat(chatId: string): { account_id: string; name: string } | null {
+    const id = getConversationProviderInstanceId(chatId)
+    if (!id) return null
+    const name = getProviderInstanceFull(id, { withEnv: false })?.displayName
+    return name ? { account_id: id, name } : null
   }
 
   /** The normal resume path for a chat with no live session; an error when it cannot resume. */

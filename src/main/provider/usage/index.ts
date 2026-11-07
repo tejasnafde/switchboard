@@ -77,6 +77,13 @@ export interface UsageRequestOptions {
   force?: boolean
   /** Claude only: run one minimal CLI turn first so the CLI refreshes a stale token. */
   refreshWithTurn?: boolean
+  /**
+   * Nobody is at this Mac for this read (the Instinct bridge asks for it).
+   * It still answers from the cache and still probes on a miss, but it never
+   * reads past what the keychain cache kept and never spawns the CLI to
+   * refresh a stale token: both belong to a person who clicked Usage.
+   */
+  background?: boolean
 }
 
 /**
@@ -104,7 +111,11 @@ async function probe(
   const env = resolveInstanceEnv(instance)
 
   if (instance.agentType === 'claude-code') {
-    return fetchClaudeUsage(id, env, instance.oauthDir, { force: opts.force, refreshWithTurn: opts.refreshWithTurn })
+    return fetchClaudeUsage(id, env, instance.oauthDir, {
+      force: opts.force,
+      refreshWithTurn: opts.refreshWithTurn,
+      background: opts.background,
+    })
   }
 
   if (instance.agentType === 'codex') {

@@ -9,7 +9,7 @@ import type { ProviderUsage, UsageWindow } from '../../src/shared/provider-usage
 
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/switchboard-vitest') } }))
 
-import { chooseBridgeAccount, readBridgeAccounts } from '../../src/main/bridge/accounts'
+import { bridgeAccountById, chooseBridgeAccount, readBridgeAccounts } from '../../src/main/bridge/accounts'
 
 const room = (id: string, session: number | null, weekly: number | null): BridgeAccountRoom => ({
   account_id: id,
@@ -40,8 +40,13 @@ describe('pickBridgeAccount', () => {
     expect(pickBridgeAccount([room('a', 10, null), room('b', 10, 99)])).toBe('b')
   })
 
-  it('takes an account whose five-hour window it could not read as a candidate', () => {
-    expect(pickBridgeAccount([room('a', 95, 10), room('b', null, 50)])).toBe('b')
+  it('never counts an unread five-hour window as room, so a signed-out account does not win', () => {
+    expect(pickBridgeAccount([room('a', 95, 10), room('b', null, 50)])).toBe('a')
+    expect(pickBridgeAccount([room('a', 95, 90), room('b', null, 50)])).toBe('b')
+  })
+
+  it('ranks every account together when no five-hour window could be read', () => {
+    expect(pickBridgeAccount([room('a', null, 70), room('b', null, 20)])).toBe('b')
   })
 
   it('keeps the first of the list on equal readings, so the answer never flaps', () => {
@@ -146,6 +151,31 @@ describe('readBridgeAccounts', () => {
     ])
     expect(JSON.stringify(rows)).not.toContain('/Users/someone')
     expect(chooseBridgeAccount(rows)).toBe('work')
+  })
+
+  it('folds a per-model weekly window into the weekly signal', async () => {
+    const [row] = await readBridgeAccounts('claude-code', {
+      accounts: () => [accounts[0]],
+      usage: async () =>
+        usage({ windows: [window_('weekly', 10, null), window_('model', 100, null), window_('session', 5, null)] }),
+    })
+    expect(row.weekly.used_percent).toBe(100)
+    expect(row.session.used_percent).toBe(5)
+    expect(chooseBridgeAccount([row])).toBe('work')
+  })
+
+  it('answers an account by id with no usage read at all', () => {
+    let reads = 0
+    const deps = {
+      accounts: () => accounts,
+      usage: async () => {
+        reads += 1
+        return usage({})
+      },
+    }
+    expect(bridgeAccountById('claude-code', 'home', deps)).toEqual({ account_id: 'home', name: 'Home' })
+    expect(bridgeAccountById('claude-code', 'nope', deps)).toBeNull()
+    expect(reads).toBe(0)
   })
 
   it('answers an empty list for an agent with no enabled account', async () => {

@@ -53,6 +53,7 @@ import {
   setConversationRuntimeMode,
   setConversationWorktree,
 } from '../../src/main/db/database'
+import { upsertProviderInstance } from '../../src/main/db/provider-instances'
 import { setBridgeProjectAllowed } from '../../src/main/bridge/allowlist'
 import {
   BridgeCheckService,
@@ -472,6 +473,42 @@ describe('start_chat picks an account', () => {
     const receipt = ok(await start())
     expect(receipt.account).toBeNull()
     expect(host.starts.at(-1)?.instanceId).toBeUndefined()
+  })
+
+  it('names an account by id with no usage read at all', async () => {
+    let probes = 0
+    const counting: BridgeAccountDeps = {
+      accounts: accountDeps.accounts,
+      usage: async (id) => {
+        probes += 1
+        return accountDeps.usage(id)
+      },
+    }
+    delivery = new BridgeDeliveryService(host, reads, Date.now, { stopConfirmMs: 300, stopPollMs: 5 }, counting)
+    expect(ok(await start({ account: 'claude-work' })).account?.account_id).toBe('claude-work')
+    expect(probes).toBe(0)
+  })
+
+  it('names the account the chat actually runs on, not the one the start asked for', async () => {
+    const row = upsertProviderInstance({ agentType: 'claude-code', displayName: 'Fallback', authMode: 'env', env: {} })
+    host.instanceId = row.id
+    const receipt = ok(await start({ account: 'claude-work' }))
+    expect(receipt.account).toEqual({ account_id: row.id, name: 'Fallback' })
+  })
+
+  it('refuses a start once the owner narrows the project cap while the accounts are read', async () => {
+    const narrowing: BridgeAccountDeps = {
+      accounts: accountDeps.accounts,
+      usage: async (id) => {
+        const [policy] = listBridgeProjectPolicies()
+        saveBridgeProjectPolicy({ ...policy, maximum_mode: 'plan', default_mode: 'plan' })
+        return accountDeps.usage(id)
+      },
+    }
+    delivery = new BridgeDeliveryService(host, reads, Date.now, { stopConfirmMs: 300, stopPollMs: 5 }, narrowing)
+    const error = err(await start({}, owner('relay-narrowed')))
+    expect(error.code).toBe('mode_not_allowed')
+    expect(host.starts).toHaveLength(0)
   })
 
   it('answers a replay with the account it used', async () => {

@@ -7,8 +7,11 @@
  * the name the owner gave it, and the two usage windows as percent and reset
  * time. No credential, no config directory, no email the row does not hold.
  * The readings come from the registry's own usage probes and their 45 second
- * cache (`provider/usage`), unforced, so nothing here prompts for the
- * keychain or spawns a probe the owner did not ask for.
+ * cache (`provider/usage`). They are `background`: they answer from the cache
+ * where they can, and on a miss they run the same unforced read the Settings
+ * Usage button runs, but never read past what the keychain cache kept and
+ * never spawn the CLI to refresh a stale token. Naming an account by id costs
+ * no read at all.
  */
 import { pickBridgeAccount, type BridgeAccountView, type BridgeUsageWindow } from '@shared/bridge'
 import type { ProviderUsage, UsageWindow } from '@shared/provider-usage'
@@ -33,16 +36,22 @@ function defaultAccounts(agent: AgentType): Array<{ id: string; name: string }> 
 
 async function defaultUsage(accountId: string): Promise<ProviderUsage> {
   const { fetchInstanceUsage } = await import('../provider/usage')
-  return fetchInstanceUsage(accountId)
+  return fetchInstanceUsage(accountId, { background: true })
 }
 
 const liveAccounts: BridgeAccountDeps = { accounts: defaultAccounts, usage: defaultUsage }
 
 const EMPTY_WINDOW: BridgeUsageWindow = { used_percent: null, resets_at: null }
 
-/** The widest reading of one window kind, since a provider can name several. */
-function windowOf(usage: ProviderUsage, kind: UsageWindow['kind']): BridgeUsageWindow {
-  const windows = usage.windows.filter((w) => w.kind === kind)
+/**
+ * The fullest reading over these window kinds, since a provider can name
+ * several and the fullest is what stops the next turn. The weekly signal
+ * covers `model` too: Claude reports a per-model weekly limit as its own
+ * window, and an account at 100 percent there has no room for that model
+ * however empty its general weekly window is.
+ */
+function windowOf(usage: ProviderUsage, kinds: ReadonlyArray<UsageWindow['kind']>): BridgeUsageWindow {
+  const windows = usage.windows.filter((w) => kinds.includes(w.kind))
   if (windows.length === 0) return EMPTY_WINDOW
   const percents = windows.map((w) => w.usedPercent).filter((p): p is number => p !== null)
   const resets = windows.map((w) => w.resetsAtMs).filter((ms): ms is number => ms !== null)
@@ -69,8 +78,8 @@ function viewOf(account: { id: string; name: string }, usage: ProviderUsage | nu
       session: EMPTY_WINDOW,
       weekly: EMPTY_WINDOW,
     }
-  const session = windowOf(usage, 'session')
-  const weekly = windowOf(usage, 'weekly')
+  const session = windowOf(usage, ['session'])
+  const weekly = windowOf(usage, ['weekly', 'model'])
   const read = session.used_percent !== null || weekly.used_percent !== null
   return {
     account_id: account.id,
@@ -102,6 +111,16 @@ export async function readBridgeAccounts(
       }
     }),
   )
+}
+
+/** One account of one agent by its row id, with no usage read at all. */
+export function bridgeAccountById(
+  agent: AgentType,
+  accountId: string,
+  deps: BridgeAccountDeps = liveAccounts,
+): { account_id: string; name: string } | null {
+  const found = deps.accounts(agent).find((a) => a.id === accountId)
+  return found ? { account_id: found.id, name: found.name } : null
 }
 
 /** Which of these accounts `start_chat` takes when it is given none. */
