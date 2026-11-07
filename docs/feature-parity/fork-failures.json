@@ -9,22 +9,20 @@
       "evidence": [
         "src/renderer/components/chat/MessageBubble.tsx",
         "src/renderer/hooks/useTerminalLifecycle.ts",
-        "src/shared/conversation-fork.ts",
         "tests/unit/fork-status-gate.test.ts"
       ]
     },
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/screens/ThreadScreen.tsx",
-        "src/shared/conversation-fork.ts",
-        "tests/unit/fork-status-gate.test.ts"
+        "apps/mobile/src/screens/ThreadScreen.tsx"
       ]
     },
     "nativeAndroid": {
       "status": "implemented",
       "evidence": [
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionScreen.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/GitContextPresentation.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/GitContextPresentationTest.kt"
