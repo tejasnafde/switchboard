@@ -84,8 +84,8 @@ export interface BridgeLiveState {
 
 export interface BridgeReadDeps {
   live: BridgeLiveState
-  /** Whether an agent can start on this desktop. Omitted: every allowed agent reads as available. */
-  agentAvailable?: (agent: AgentType) => Promise<boolean>
+  /** Whether an agent can start on this desktop. */
+  agentAvailable: (agent: AgentType) => Promise<boolean>
   /** Every enabled account of one agent with its usage. Omitted: the live reader. */
   accounts?: (agent: AgentType) => Promise<BridgeAgentRow['accounts']>
   /** This desktop's stable machine id. */
@@ -392,11 +392,10 @@ export class BridgeReadService {
       scope = [project.value]
     }
     const names = [...new Set(scope.flatMap((a) => bridgeProjectAgents(a.policy)))].sort()
-    const available = this.deps.agentAvailable ?? (async () => true)
     const accountsOf = this.deps.accounts ?? ((agent: AgentType) => readBridgeAccounts(agent))
     const agents = await Promise.all(
       names.map(async (agent): Promise<BridgeAgentRow> => {
-        const [canStart, accounts] = await Promise.all([available(agent), accountsOf(agent)])
+        const [canStart, accounts] = await Promise.all([this.deps.agentAvailable(agent), accountsOf(agent)])
         return {
           agent,
           label: agentLabel(agent),

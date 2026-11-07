@@ -1,24 +1,19 @@
 import { RUNTIME_MODE_LABELS, type RuntimeMode } from '@shared/provider-events'
 
-export interface RuntimeModeOption {
-  value: RuntimeMode
-  label: string
-  short: string
-  detail: string
-}
+// The footer chip shows the label, and `short` once the footer is narrow
+// (ui/toolbar-steps.ts). The detail is a tooltip. The label comes from the
+// shared map, so the chip and the backend's refusals say one word.
+const option = (value: RuntimeMode, short: string, detail: string) => ({
+  value,
+  label: RUNTIME_MODE_LABELS[value],
+  short,
+  detail,
+})
 
-// Short labels: the footer chip shows the label, and `short` once the footer
-// is narrow (ui/toolbar-steps.ts). The detail is a tooltip. The long label
-// comes from the shared map, so the chip and the backend say one word.
-const SHORT: ReadonlyArray<Omit<RuntimeModeOption, 'label'>> = [
-  { value: 'sandbox', short: 'Supervised', detail: 'Ask before commands and file changes' },
-  { value: 'accept-edits', short: 'Edits', detail: 'Ask before other actions' },
-  { value: 'auto', short: 'Auto', detail: 'The agent approves routine actions. OpenCode still asks.' },
-  { value: 'full-access', short: 'Full', detail: 'No prompts' },
-  { value: 'plan', short: 'Plan', detail: 'No execution' },
+export const RUNTIME_MODE_OPTIONS = [
+  option('sandbox', 'Supervised', 'Ask before commands and file changes'),
+  option('accept-edits', 'Edits', 'Ask before other actions'),
+  option('auto', 'Auto', 'The agent approves routine actions. OpenCode still asks.'),
+  option('full-access', 'Full', 'No prompts'),
+  option('plan', 'Plan', 'No execution'),
 ]
-
-export const RUNTIME_MODE_OPTIONS: ReadonlyArray<RuntimeModeOption> = SHORT.map((option) => ({
-  ...option,
-  label: RUNTIME_MODE_LABELS[option.value],
-}))

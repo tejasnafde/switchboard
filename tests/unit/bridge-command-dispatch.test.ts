@@ -80,6 +80,7 @@ function build(): void {
   reads = new BridgeReadService({
     machineId: () => MACHINE,
     live: { status: () => null, busy: (id) => host.busy(id), pending: (id) => host.pending.get(id) ?? [] },
+    agentAvailable: (agent) => host.agentAvailable(agent),
   })
   delivery = new BridgeDeliveryService(host, reads, Date.now, { stopConfirmMs: 300, stopPollMs: 5 })
   dispatcher = new BridgeCommandDispatcher({

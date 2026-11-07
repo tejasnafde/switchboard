@@ -213,9 +213,8 @@ export interface BridgeStartReceipt extends ReceiptBase {
   project: { project_id: string; label: string }
   message_id: string
   agent: AgentType
-  /** The model the chat was started with; null when the agent's own default applies. */
   model: string | null
-  /** The account the chat runs on, as `list_agents` names it; null when none was resolved. */
+  /** The account the chat runs on, as `list_agents` names it; null when the agent has none. */
   account: { account_id: string; name: string } | null
   mode: RuntimeMode
 }
@@ -484,7 +483,6 @@ export class BridgeDeliveryService {
     const accounts = await this.accounts(agent)
     if (accounts.length === 0) return { ok: true, value: null }
     const plain = (a: BridgeAccountView) => ({ account_id: a.account_id, name: a.name })
-    const choices = accounts.map(plain)
     if (asked !== undefined) {
       const byId = accounts.find((a) => a.account_id === asked)
       if (byId) return { ok: true, value: plain(byId) }
@@ -500,7 +498,7 @@ export class BridgeDeliveryService {
       return fail(
         bridgeError('agent_unavailable', `${agent} has no account by that name.`, {
           target,
-          account_choices: choices,
+          account_choices: accounts.map(plain),
         }),
       )
     }

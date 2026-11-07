@@ -19,7 +19,7 @@ import {
   type BridgeProjectChecksRow,
   type BridgeProjectSetupRow,
 } from '@shared/bridge'
-import { isRuntimeMode, RUNTIME_MODES, type RuntimeMode } from '@shared/provider-events'
+import { isRuntimeMode, RUNTIME_MODES } from '@shared/provider-events'
 import {
   bridgeCheckDefinitionHash,
   bridgeCheckOutcome,
@@ -145,14 +145,11 @@ export function setBridgeProjectMaximumMode(projectId: string, mode: unknown): v
   const policy = getBridgeProjectPolicy(projectId)
   if (!policy) throw new Error('That project is not on the bridge allowlist.')
   const { revision: _revision, updated_at: _updatedAt, ...base } = policy
-  const next = { ...base, maximum_mode: mode, default_mode: narrower(policy.default_mode, mode) }
+  const lowered = RUNTIME_MODES.indexOf(policy.default_mode) > RUNTIME_MODES.indexOf(mode) ? mode : policy.default_mode
+  const next = { ...base, maximum_mode: mode, default_mode: lowered }
   if (!bridgePolicyModesValid(next)) throw new Error('That mode cannot be stored for this project.')
   saveBridgeProjectPolicy(next)
   log.info('bridge project maximum mode saved', { projectId, mode })
-}
-
-function narrower(a: RuntimeMode, b: RuntimeMode): RuntimeMode {
-  return RUNTIME_MODES.indexOf(a) <= RUNTIME_MODES.indexOf(b) ? a : b
 }
 
 /** Takes a project off the allowlist by id, with no folder lookup. */

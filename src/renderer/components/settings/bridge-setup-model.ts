@@ -53,9 +53,7 @@ export function allShownAllowed(rows: readonly BridgeProjectSetupRow[]): boolean
 }
 
 /** The Highest mode picker's rows, narrowest first, as the shared list orders them. */
-export const BRIDGE_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string }> = BRIDGE_MODE_CHOICES.map(
-  (value) => ({ value, label: RUNTIME_MODE_LABELS[value] }),
-)
+export const BRIDGE_MODE_OPTIONS = BRIDGE_MODE_CHOICES.map((value) => ({ value, label: RUNTIME_MODE_LABELS[value] }))
 
 /**
  * What the owner must confirm before a wider cap is stored, or null when the

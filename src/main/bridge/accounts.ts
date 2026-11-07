@@ -10,21 +10,13 @@
  * cache (`provider/usage`), unforced, so nothing here prompts for the
  * keychain or spawns a probe the owner did not ask for.
  */
-import {
-  BRIDGE_ACCOUNT_BUSY_PERCENT,
-  pickBridgeAccount,
-  type BridgeAccountRoom,
-  type BridgeAccountView,
-  type BridgeUsageWindow,
-} from '@shared/bridge'
+import { pickBridgeAccount, type BridgeAccountView, type BridgeUsageWindow } from '@shared/bridge'
 import type { ProviderUsage, UsageWindow } from '@shared/provider-usage'
 import type { AgentType } from '@shared/types'
 import { listProviderInstances } from '../db/provider-instances'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('bridge:accounts')
-
-export { BRIDGE_ACCOUNT_BUSY_PERCENT }
 
 export interface BridgeAccountDeps {
   /** Enabled accounts of one agent, oldest first, as the picker lists them. */
@@ -44,7 +36,7 @@ async function defaultUsage(accountId: string): Promise<ProviderUsage> {
   return fetchInstanceUsage(accountId)
 }
 
-export const bridgeAccountDeps: BridgeAccountDeps = { accounts: defaultAccounts, usage: defaultUsage }
+const liveAccounts: BridgeAccountDeps = { accounts: defaultAccounts, usage: defaultUsage }
 
 const EMPTY_WINDOW: BridgeUsageWindow = { used_percent: null, resets_at: null }
 
@@ -96,7 +88,7 @@ function viewOf(account: { id: string; name: string }, usage: ProviderUsage | nu
  */
 export async function readBridgeAccounts(
   agent: AgentType,
-  deps: BridgeAccountDeps = bridgeAccountDeps,
+  deps: BridgeAccountDeps = liveAccounts,
 ): Promise<BridgeAccountView[]> {
   const accounts = deps.accounts(agent)
   return Promise.all(
@@ -112,15 +104,13 @@ export async function readBridgeAccounts(
   )
 }
 
-export function accountRooms(accounts: readonly BridgeAccountView[]): BridgeAccountRoom[] {
-  return accounts.map((a) => ({
-    account_id: a.account_id,
-    session_percent: a.session.used_percent,
-    weekly_percent: a.weekly.used_percent,
-  }))
-}
-
 /** Which of these accounts `start_chat` takes when it is given none. */
 export function chooseBridgeAccount(accounts: readonly BridgeAccountView[]): string | null {
-  return pickBridgeAccount(accountRooms(accounts))
+  return pickBridgeAccount(
+    accounts.map((a) => ({
+      account_id: a.account_id,
+      session_percent: a.session.used_percent,
+      weekly_percent: a.weekly.used_percent,
+    })),
+  )
 }

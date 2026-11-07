@@ -909,8 +909,9 @@ async function captureThemeScreens(win, theme) {
   await settings.getByRole('switch', { name: 'Children on other machines' }).and(win.locator(':disabled')).waitFor()
 
   // The Instinct bridge panels, which show only with the flag on: the numbered
-  // setup checklist and the searchable project list. Each is captured on its
-  // own, because a region taller than the window does not paint in full. The
+  // setup checklist and the searchable project list with one project allowed,
+  // so its Highest mode picker is in the shot. Each is captured on its own,
+  // because a region taller than the window does not paint in full. The
   // project folders are this computer's, so they are masked.
   const bridgeSwitch = settings.getByRole('switch', { name: 'Instinct bridge' })
   await bridgeSwitch.click()
@@ -921,6 +922,11 @@ async function captureThemeScreens(win, theme) {
   const projectPaths = [bridgeProjects.locator('[data-project-path]')]
   await bridgeSetup.scrollIntoViewIfNeeded()
   await snapScreen(win, 'settings-labs-bridge-setup', theme, bridgeSetup)
+  // One project allowed, so the list shows its Highest mode picker.
+  const firstProject = bridgeProjects.locator('[data-testid="bridge-projects-list"] [role="checkbox"]').first()
+  await firstProject.click()
+  const highestMode = bridgeProjects.locator('[aria-label^="Highest mode for "]')
+  await highestMode.waitFor({ state: 'visible' })
   await bridgeProjects.scrollIntoViewIfNeeded()
   await snapScreen(win, 'settings-labs-bridge-projects', theme, bridgeProjects, projectPaths)
   if (theme === 'Dark') {
@@ -934,6 +940,9 @@ async function captureThemeScreens(win, theme) {
     )
     await settle(win)
   }
+  // Off the allowlist again, so the bridge reaches nothing after this screen.
+  await firstProject.click()
+  await highestMode.waitFor({ state: 'detached' })
   // Off again, so no later screen runs with the flag on.
   await bridgeSwitch.click()
   await bridgeSetup.waitFor({ state: 'detached' })

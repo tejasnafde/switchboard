@@ -95,7 +95,7 @@ beforeEach(() => {
     busy: () => false,
     pending: (id) => live.pending.get(id) ?? [],
   }
-  service = new BridgeReadService({ live: state, machineId: () => MACHINE })
+  service = new BridgeReadService({ live: state, machineId: () => MACHINE, agentAvailable: async () => true })
   addProject(ALLOWED, 'Raves site')
   addProject(OTHER, 'Other')
   setBridgeProjectAllowed(ALLOWED, true, MACHINE)

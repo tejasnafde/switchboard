@@ -177,6 +177,7 @@ beforeEach(() => {
   reads = new BridgeReadService({
     machineId: () => MACHINE,
     live: { status: () => null, busy: (id) => host.busy(id), pending: (id) => host.pending.get(id) ?? [] },
+    agentAvailable: (agent) => host.agentAvailable(agent),
   })
   accountRows = [
     { account_id: 'claude-work', name: 'Work', usage: 'ok', session: pct(95), weekly: pct(10) },

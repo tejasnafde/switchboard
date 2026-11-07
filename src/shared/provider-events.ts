@@ -39,16 +39,12 @@ export const RUNTIME_MODES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept
  * chip, the settings pickers and the backend's refusals all say the same
  * word, so a refusal names a control the owner can find.
  */
-export const RUNTIME_MODE_LABELS: Readonly<Record<RuntimeMode, string>> = Object.freeze({
+export const RUNTIME_MODE_LABELS: Readonly<Record<RuntimeMode, string>> = {
   plan: 'Plan',
   sandbox: 'Supervised',
   'accept-edits': 'Auto-accept edits',
   auto: 'Auto',
   'full-access': 'Full access',
-})
-
-export function runtimeModeLabel(mode: RuntimeMode): string {
-  return RUNTIME_MODE_LABELS[mode]
 }
 
 /**

@@ -11,7 +11,7 @@
  * backend setting `labs.instinct_bridge` turns it on.
  */
 import type { SettingReader } from './limit-resume'
-import { RUNTIME_MODES, runtimeModeLabel, type RuntimeMode } from './provider-events'
+import { isRuntimeMode, RUNTIME_MODE_LABELS, RUNTIME_MODES, type RuntimeMode } from './provider-events'
 import type { AgentType } from './types'
 
 export const INSTINCT_BRIDGE_ENABLED = false
@@ -143,11 +143,12 @@ export function resolveBridgeMode(
 }
 
 /**
- * The Highest mode choices, narrowest first, as Settings > Labs lists them.
- * Every runtime mode is offered: the owner decides how far the bridge may go
- * in one project, and a wider chat is then refused rather than lowered.
+ * The Highest mode choices, narrowest first, as Settings > Labs lists them:
+ * every runtime mode, in the one order `modeRank` already ranks them by. The
+ * owner decides how far the bridge may go in one project, and a wider chat is
+ * then refused rather than lowered.
  */
-export const BRIDGE_MODE_CHOICES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'auto', 'full-access']
+export const BRIDGE_MODE_CHOICES = RUNTIME_MODES
 
 /** The one-line risk note under a cap the owner should think about, or null. */
 export function bridgeModeRiskNote(mode: RuntimeMode): string | null {
@@ -167,24 +168,20 @@ export function bridgeChatModeRefusal(input: {
   projectLabel: string
 }): string {
   return (
-    `This chat runs in ${runtimeModeLabel(input.chatMode)}. ` +
-    `The bridge may drive chats in this project up to ${runtimeModeLabel(input.cap)}. ` +
+    `This chat runs in ${RUNTIME_MODE_LABELS[input.chatMode]}. ` +
+    `The bridge may drive chats in this project up to ${RUNTIME_MODE_LABELS[input.cap]}. ` +
     `Change Highest mode for ${input.projectLabel} in Settings > Labs, or start a new chat.`
   )
 }
 
 /** Why an asked-for mode is refused on a start, in the same words. */
 export function bridgeStartModeRefusal(input: { requested: unknown; cap: RuntimeMode; projectLabel: string }): string {
-  const asked = typeof input.requested === 'string' && isBridgeMode(input.requested) ? input.requested : null
-  const first = asked ? `${runtimeModeLabel(asked)} is wider than this project allows.` : 'That is not a mode.'
+  const asked = isRuntimeMode(input.requested) ? input.requested : null
+  const first = asked ? `${RUNTIME_MODE_LABELS[asked]} is wider than this project allows.` : 'That is not a mode.'
   return (
-    `${first} The bridge may start chats in this project up to ${runtimeModeLabel(input.cap)}. ` +
+    `${first} The bridge may start chats in this project up to ${RUNTIME_MODE_LABELS[input.cap]}. ` +
     `Change Highest mode for ${input.projectLabel} in Settings > Labs.`
   )
-}
-
-function isBridgeMode(value: string): value is RuntimeMode {
-  return (RUNTIME_MODES as readonly string[]).includes(value)
 }
 
 /** A policy whose default mode is above its cap, or has an unknown mode, is not stored. */

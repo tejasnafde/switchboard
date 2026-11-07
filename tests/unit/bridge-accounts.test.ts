@@ -9,7 +9,7 @@ import type { ProviderUsage, UsageWindow } from '../../src/shared/provider-usage
 
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/switchboard-vitest') } }))
 
-import { accountRooms, chooseBridgeAccount, readBridgeAccounts } from '../../src/main/bridge/accounts'
+import { chooseBridgeAccount, readBridgeAccounts } from '../../src/main/bridge/accounts'
 
 const room = (id: string, session: number | null, weekly: number | null): BridgeAccountRoom => ({
   account_id: id,
@@ -145,10 +145,7 @@ describe('readBridgeAccounts', () => {
       ['home', 'unreadable'],
     ])
     expect(JSON.stringify(rows)).not.toContain('/Users/someone')
-    expect(accountRooms(rows)).toEqual([
-      { account_id: 'work', session_percent: 5, weekly_percent: null },
-      { account_id: 'home', session_percent: null, weekly_percent: null },
-    ])
+    expect(chooseBridgeAccount(rows)).toBe('work')
   })
 
   it('answers an empty list for an agent with no enabled account', async () => {

@@ -13,7 +13,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { bridgeModeRiskNote, type BridgeProjectSetup, type BridgeProjectSetupRow } from '@shared/bridge'
-import { type RuntimeMode } from '@shared/provider-events'
+import type { RuntimeMode } from '@shared/provider-events'
 import {
   allShownAllowed,
   BRIDGE_MODE_OPTIONS,
@@ -181,6 +181,7 @@ export function BridgeProjectsPanel() {
           {shown.map((project) => {
             const key = project.orphan ? `orphan:${project.projectId}` : project.path
             const id = `bridge-project-${key.replace(/\W/g, '-')}`
+            const risk = project.maximumMode ? bridgeModeRiskNote(project.maximumMode) : null
             return (
               <div key={key} className="flex items-center gap-3 border-t border-[var(--border)] px-[14px] py-2.5">
                 <Checkbox
@@ -198,18 +199,14 @@ export function BridgeProjectsPanel() {
                         ? 'Folder not found'
                         : project.path}
                   </div>
-                  {project.maximumMode && bridgeModeRiskNote(project.maximumMode) && (
-                    <div className="mt-1 text-[11px] leading-4 text-[var(--warning)]">
-                      {bridgeModeRiskNote(project.maximumMode)}
-                    </div>
-                  )}
+                  {risk && <div className="mt-1 text-[11px] leading-4 text-[var(--warning)]">{risk}</div>}
                 </label>
                 {project.maximumMode && !project.orphan && (
                   <Combobox
                     aria-label={`Highest mode for ${project.name}`}
                     value={project.maximumMode}
                     onValueChange={(next) => void setMode(project, next as RuntimeMode)}
-                    options={[...BRIDGE_MODE_OPTIONS]}
+                    options={BRIDGE_MODE_OPTIONS}
                     searchable={false}
                     disabled={busy}
                     className="h-7 w-[150px] flex-none text-[12px]"
