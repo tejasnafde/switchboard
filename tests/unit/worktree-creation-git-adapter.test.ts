@@ -90,6 +90,17 @@ describe('ExecFileGitWorktreeAdapter', () => {
     }
   })
 
+  it('names a folder that is not a git work tree instead of printing raw git output', async () => {
+    const plainFolder = await mkdtemp(join(tmpdir(), 'sb-worktree-plain-'))
+    scratch.add(plainFolder)
+    const adapter = new ExecFileGitWorktreeAdapter()
+
+    await expect(adapter.resolveRepository(plainFolder)).rejects.toThrow(`Not a git repository: ${plainFolder}`)
+    // Fork-into-a-worktree inspects the source checkout first, so the same
+    // folder fails there with the same words, not with `rev-parse` output.
+    await expect(adapter.inspect(plainFolder)).rejects.toThrow(`Not a git repository: ${plainFolder}`)
+  })
+
   it('resolves the same canonical repository identity from the main checkout and a linked worktree', async () => {
     const fixture = await createRepository()
     const linkedPath = join(fixture.root, 'existing-linked-worktree')

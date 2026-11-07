@@ -22,7 +22,14 @@ import { chatQuoteAuthor } from '../../services/context-formatters'
 import { splitSkillMentions } from './slash-commands'
 import { SkillChip } from './SkillChip'
 import { forkAndOpenSession } from '../../services/fork-session'
-import { forkBlockedByStatus, isForkableForkMessage } from '@shared/conversation-fork'
+import { sessionExecutionRoot } from '../../services/execution-root'
+import {
+  type BranchReadAnswer,
+  BRANCH_READ_WAIT_MS,
+  forkBlockedByStatus,
+  isForkableForkMessage,
+  offerForkIntoWorktree,
+} from '@shared/conversation-fork'
 import { parseRotationMarker } from '@shared/rotation-marker'
 import { parseUndeliveredMarker } from '@shared/peer-links'
 import { PeerUndeliveredRow } from './PeerUndeliveredRow'
@@ -170,7 +177,7 @@ export const MessageBubble = memo(function MessageBubble({
   // dismisses on click-outside / Escape. We resolve the fork's source
   // conversation lazily off `useAgentStore.getState()` at click time so
   // we don't subscribe the bubble to every store change.
-  const [forkMenu, setForkMenu] = useState<{ x: number; y: number } | null>(null)
+  const [forkMenu, setForkMenu] = useState<{ x: number; y: number; cwd: string | null } | null>(null)
   const [forkBusy, setForkBusy] = useState<false | 'plain' | 'worktree'>(false)
   const [forkError, setForkError] = useState<string | null>(null)
   // After a successful "Fork to worktree" the new branch name flashes
@@ -486,7 +493,7 @@ export const MessageBubble = memo(function MessageBubble({
         // doesn't bubble through this handler, so it stays unaffected.
         if (message.deliveryState || queued || !isForkableForkMessage(message)) return
         e.preventDefault()
-        setForkMenu({ x: e.clientX, y: e.clientY })
+        setForkMenu({ x: e.clientX, y: e.clientY, cwd: sessionExecutionRoot(sessionId)?.path ?? null })
         setForkError(null)
       }}
       style={{
@@ -837,6 +844,7 @@ export const MessageBubble = memo(function MessageBubble({
           <ForkContextMenu
             x={forkMenu.x}
             y={forkMenu.y}
+            cwd={forkMenu.cwd}
             busy={forkBusy}
             error={forkError}
             onFork={() => handleForkRequest(false)}
@@ -1159,6 +1167,7 @@ function ForwardMenu({ content, sourceSessionId }: { content: string; sourceSess
 function ForkContextMenu({
   x,
   y,
+  cwd,
   busy,
   error,
   onFork,
@@ -1167,6 +1176,8 @@ function ForkContextMenu({
 }: {
   x: number
   y: number
+  /** The chat's execution root, probed once for "is this a git work tree". */
+  cwd: string | null
   /** False when idle, otherwise which entry the user just clicked.
    *  Lets us only spinner-out the affected row instead of greying both. */
   busy: false | 'plain' | 'worktree'
@@ -1177,6 +1188,39 @@ function ForkContextMenu({
   onDismiss: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  // The menu paints once this read has answered, so a folder that is not a
+  // work tree never shows an entry that then disappears. A read that has not
+  // answered within BRANCH_READ_WAIT_MS (a stalled remote machine) must not
+  // swallow the menu, so the wait ends and the entry stays.
+  const [branch, setBranch] = useState<BranchReadAnswer | null>(null)
+  const [branchRead, setBranchRead] = useState(false)
+  useEffect(() => {
+    if (!cwd) {
+      setBranchRead(true)
+      return
+    }
+    let live = true
+    const settle = (answer: BranchReadAnswer | null) => {
+      if (!live) return
+      live = false
+      setBranch(answer)
+      setBranchRead(true)
+    }
+    const timer = setTimeout(() => settle(null), BRANCH_READ_WAIT_MS)
+    window.api.git
+      .currentBranch(cwd)
+      .then(settle)
+      .catch((err) => {
+        log.warn('fork menu: current-branch read failed', err)
+        settle(null)
+      })
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [cwd])
+  const showWorktreeFork = offerForkIntoWorktree(branch)
+
   // Clamp the menu inside the viewport so a right-click near the edge
   // doesn't push it off-screen. We render hidden on first paint, measure
   // synchronously in useLayoutEffect, and reveal on the same frame - that
@@ -1191,7 +1235,7 @@ function ForkContextMenu({
     const nx = Math.min(x, window.innerWidth - rect.width - margin)
     const ny = Math.min(y, window.innerHeight - rect.height - margin)
     setPos({ x: Math.max(margin, nx), y: Math.max(margin, ny) })
-  }, [x, y])
+  }, [x, y, showWorktreeFork])
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -1216,7 +1260,7 @@ function ForkContextMenu({
         position: 'fixed',
         top: pos?.y ?? y,
         left: pos?.x ?? x,
-        visibility: pos ? 'visible' : 'hidden',
+        visibility: pos && branchRead ? 'visible' : 'hidden',
         zIndex: 1300,
         minWidth: '200px',
         background: 'var(--bg-secondary)',
@@ -1249,33 +1293,35 @@ function ForkContextMenu({
           </svg>
         }
       />
-      <ForkMenuItem
-        label={busy === 'worktree' ? 'Creating worktree…' : 'Fork conversation into a new worktree from current HEAD'}
-        disabled={busy !== false}
-        onClick={onForkWorktree}
-        icon={
-          // A small "branch + box" combo evokes "git branch into its own
-          // working tree" without screaming for a third-party icon set.
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="6" cy="6" r="2.5" />
-            <circle cx="6" cy="18" r="2.5" />
-            <circle cx="18" cy="9" r="2.5" />
-            <path d="M6 8.5v7" />
-            <path d="M6 13a6 6 0 0 0 6-6" />
-            <rect x="14" y="13" width="8" height="8" rx="1" />
-          </svg>
-        }
-        sublabel="uncommitted and untracked changes are not copied"
-      />
+      {showWorktreeFork && (
+        <ForkMenuItem
+          label={busy === 'worktree' ? 'Creating worktree…' : 'Fork conversation into a new worktree from current HEAD'}
+          disabled={busy !== false}
+          onClick={onForkWorktree}
+          icon={
+            // A small "branch + box" combo evokes "git branch into its own
+            // working tree" without screaming for a third-party icon set.
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="6" cy="6" r="2.5" />
+              <circle cx="6" cy="18" r="2.5" />
+              <circle cx="18" cy="9" r="2.5" />
+              <path d="M6 8.5v7" />
+              <path d="M6 13a6 6 0 0 0 6-6" />
+              <rect x="14" y="13" width="8" height="8" rx="1" />
+            </svg>
+          }
+          sublabel="uncommitted and untracked changes are not copied"
+        />
+      )}
       {error && (
         <div
           style={{

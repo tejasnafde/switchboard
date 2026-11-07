@@ -244,6 +244,7 @@ fun ThreadScreen(
     onOutboxAction: (String, OutboxUiAction) -> Unit = { _, _ -> },
     forkMetadata: ForkLineageMetadata? = null,
     onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
+    offerWorktreeFork: Boolean = true,
     onSendOverride: (String) -> Unit = {},
     onToggleDelivery: () -> Unit = {},
     held: ThreadHeldPresentation = ThreadHeldPresentation(),
@@ -565,10 +566,12 @@ fun ThreadScreen(
                         forkMessageId = null
                         onFork(messageId, false)
                     }) { Text("Fork conversation here") }
-                    TextButton(onClick = {
-                        forkMessageId = null
-                        onFork(messageId, true)
-                    }) { Text("Fork into a new worktree from current HEAD") }
+                    if (offerWorktreeFork) {
+                        TextButton(onClick = {
+                            forkMessageId = null
+                            onFork(messageId, true)
+                        }) { Text("Fork into a new worktree from current HEAD") }
+                    }
                     TextButton(onClick = { forkMessageId = null }) { Text("Cancel") }
                 }
             }

@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { cloneDependencyDirsInBackground } from '../git/dependency-clone'
 import { createMainLogger } from '../logger'
+import { NOT_A_GIT_REPOSITORY } from '../../shared/conversation-fork'
 import type { WorktreeExistingBranchIntent } from '../../shared/worktree-creation'
 import { parseRemoteUrl } from '../../shared/pull-request-remote'
 import { repoKey, type RepoRef } from '../../shared/pull-requests'
@@ -234,8 +235,10 @@ export class ExecFileGitWorktreeAdapter {
     untrackedChanges: number
     omittedChangeSummary: string
   }> {
-    const [repository, head, status] = await Promise.all([
-      this.resolveRepository(sourceCheckoutPath),
+    // Before the rest: a folder that is no repository must fail with the
+    // named error, not with whichever raw `git` output wins the race.
+    const repository = await this.resolveRepository(sourceCheckoutPath)
+    const [head, status] = await Promise.all([
       this.run(sourceCheckoutPath, ['rev-parse', '--verify', 'HEAD']),
       this.run(sourceCheckoutPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
     ])
@@ -266,6 +269,9 @@ export class ExecFileGitWorktreeAdapter {
 
   async resolveRepository(cwd: string): Promise<ResolvedGitRepository> {
     if (!isAbsolute(cwd)) throw new Error(`Repository path must be absolute: ${cwd}`)
+    if (!(await this.succeeds(cwd, ['rev-parse', '--is-inside-work-tree']))) {
+      throw new Error(`${NOT_A_GIT_REPOSITORY}: ${cwd}`)
+    }
     const [commonResult, worktreesResult] = await Promise.all([
       this.run(cwd, ['rev-parse', '--git-common-dir']),
       this.run(cwd, ['worktree', 'list', '--porcelain']),

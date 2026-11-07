@@ -239,12 +239,12 @@ export class SqliteConversationForkStore {
           parent_conversation_id, forked_at_message_id, worktree_path,
           worktree_branch, worktree_id, worktree_creation_id, runtime_mode, model,
           reasoning_effort, provider_instance_id, pending_handoff_from,
-          launch_config_name, sidebar_role, fork_anchor_digest, fork_anchor_role,
+          sidebar_role, fork_anchor_digest, fork_anchor_role,
           fork_anchor_timestamp, fork_anchor_canonical_count, fork_resume_mode,
           fork_anchor_preview, fork_git_base_sha, fork_source_dirty,
           fork_omitted_change_summary
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed',
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed',
           ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
       `)
@@ -267,7 +267,6 @@ export class SqliteConversationForkStore {
         conversation.reasoningEffort,
         conversation.providerInstanceId,
         input.pendingHandoffFrom,
-        conversation.launchConfigName,
         conversation.anchor.contentDigest,
         conversation.anchor.role,
         conversation.anchor.timestamp,
@@ -278,6 +277,19 @@ export class SqliteConversationForkStore {
         input.result.git ? (input.result.git.sourceDirty ? 1 : 0) : null,
         input.result.git?.omittedChangeSummary ?? null,
       )
+
+    // The launch config lives on `session_layouts`, not on `conversations`:
+    // that is the row `app:load-session` and the next fork read it back from.
+    // The fork gets the name with no panes, so it hydrates the same launch
+    // config against its OWN execution root instead of the parent's cwds.
+    if (conversation.launchConfigName) {
+      this.db
+        .prepare(`
+          INSERT OR REPLACE INTO session_layouts (session_id, layout_json, launch_config_name, updated_at)
+          VALUES (?, '{}', ?, ?)
+        `)
+        .run(conversation.id, conversation.launchConfigName, conversation.createdAt)
+    }
 
     // A Codex / OpenCode native fork resumes a session of its own id, found
     // through its typed segment the way a normal restart finds it. Claude's
