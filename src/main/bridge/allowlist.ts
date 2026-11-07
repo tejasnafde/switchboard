@@ -20,6 +20,7 @@ import {
 } from '@shared/bridge'
 import {
   bridgeCheckDefinitionHash,
+  bridgeCheckOutcome,
   deleteBridgeProjectPolicy,
   flagBridgeCheckDefinitionsChanged,
   getBridgeProjectPolicy,
@@ -105,14 +106,7 @@ export function listBridgeChecksSetup(machineId = hubInstallId()): BridgeProject
       results: latestBridgeCheckRunsForProject(policy.project_id).map((run): BridgeCheckResultRow => ({
         name: run.name,
         status: checkRunStatus(run),
-        outcome:
-          run.state === 'unavailable'
-            ? 'unavailable'
-            : run.state !== 'finished'
-              ? 'not_run'
-              : run.exitCode === 0
-                ? 'passed'
-                : 'failed',
+        outcome: bridgeCheckOutcome(run),
         exit_code: run.exitCode,
         at: run.endedAt,
       })),

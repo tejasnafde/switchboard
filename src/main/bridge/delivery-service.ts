@@ -75,9 +75,8 @@ import { bridgeProjectAgents, type AllowedProject, type BridgeReadService, type 
 const log = createMainLogger('bridge:delivery')
 
 /**
- * Records the checkout as it stands now, before the turn runs, so a later
- * read can diff against it. Fire and forget: the turn must not wait for git,
- * and a checkout that cannot be read simply leaves the baseline as it was.
+ * Records the baseline a later read diffs against (`noteBridgeCall`). Fire
+ * and forget: the turn must not wait for git.
  */
 function noteBridgeCallBaseline(chatId: string, cwd: string | null): void {
   if (!cwd) return

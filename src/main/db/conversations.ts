@@ -170,13 +170,14 @@ export function getConversationExecutionRoot(id: string): StoredExecutionRoot | 
  */
 export function sharesExecutionRoot(id: string, cwd: string): boolean {
   const rootId = resolveRootThreadId(id)
-  const row = getDb()
-    .prepare(
-      `SELECT 1 AS hit FROM conversations
-        WHERE id != ? AND COALESCE(worktree_path, project_path) = ? LIMIT 1`,
-    )
-    .get(rootId, cwd) as { hit: number } | undefined
-  return row !== undefined
+  return Boolean(
+    getDb()
+      .prepare(
+        `SELECT 1 FROM conversations
+          WHERE id != ? AND COALESCE(worktree_path, project_path) = ? LIMIT 1`,
+      )
+      .get(rootId, cwd),
+  )
 }
 
 /**

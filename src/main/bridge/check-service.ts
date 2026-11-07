@@ -111,6 +111,7 @@ function defaultRun(input: {
   return new Promise((done) => {
     const chunks: string[] = []
     let bytes = 0
+    let kept = 0
     let timedOut = false
     // No shell: the program and its arguments go to execvp as they are.
     const child = spawn(input.definition.program, input.definition.args, {
@@ -127,7 +128,10 @@ function defaultRun(input: {
     input.signal.addEventListener('abort', onAbort, { once: true })
     const take = (data: Buffer) => {
       bytes += data.length
-      if (chunks.join('').length < LOG_MAX_BYTES) chunks.push(data.toString('utf8'))
+      if (kept >= LOG_MAX_BYTES) return
+      const text = data.toString('utf8')
+      chunks.push(text)
+      kept += text.length
     }
     child.stdout?.on('data', take)
     child.stderr?.on('data', take)
@@ -208,7 +212,7 @@ export class BridgeCheckService {
 
   dispose(): void {
     this.disposed = true
-    for (const [, controller] of this.inFlight) controller.abort()
+    for (const controller of this.inFlight.values()) controller.abort()
     this.inFlight.clear()
     this.edits.clear()
   }

@@ -1,9 +1,10 @@
 /**
  * Settings > Labs > Instinct bridge: list the sidebar's projects with whether
  * the bridge may open each, switch one, pick the named checks a project
- * measures, and enroll this desktop with the relay. `bridge:*` is `admin` scoped (device-auth), so only the desktop
- * reaches these. Changes refuse while the flag is off, except removing the
- * enrollment and the stop controls.
+ * measures, and enroll this desktop with the relay. `bridge:*` is `admin`
+ * scoped (device-auth), so only the desktop reaches these. Changes refuse
+ * while the flag is off, except removing the enrollment and the stop
+ * controls.
  */
 import { instinctBridgeEnabled, type BridgeChecksSetup, type BridgeProjectSetup } from '@shared/bridge'
 import { BridgeChannels } from '@shared/ipc-channels'

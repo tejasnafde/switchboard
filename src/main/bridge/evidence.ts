@@ -21,6 +21,7 @@ import {
 } from '@shared/bridge'
 import { prKey, type PrRef, type PrState } from '@shared/pull-requests'
 import {
+  bridgeCheckOutcome,
   getBridgeOrigin,
   getConversationExecutionRoot,
   listBridgeCheckRuns,
@@ -113,11 +114,8 @@ export async function buildBridgeEvidence(chatId: string, deps: BridgeEvidenceDe
     return null
   })
   const code = await codeEvidence(chatId, root, facts, observedAt, deps)
-  const [pullRequests, checks] = await Promise.all([
-    prEvidence(chatId, facts, observedAt, deps),
-    Promise.resolve(checkEvidence(chatId, facts, observedAt, deps)),
-  ])
-  return { code, pull_requests: pullRequests, checks }
+  const checks = checkEvidence(chatId, facts, observedAt, deps)
+  return { code, pull_requests: await prEvidence(chatId, facts, observedAt, deps), checks }
 }
 
 async function codeEvidence(
@@ -227,17 +225,13 @@ function checkEvidence(
     const current = facts !== null && facts.tree === run.treeBefore && !sourceMoved
     const notes: string[] = []
     let status: BridgeEvidenceStatus
-    let outcome: BridgeCheckEvidence['outcome']
     if (run.state === 'unavailable') {
       status = 'unavailable'
-      outcome = 'unavailable'
       notes.push('The check could not be run to a result.')
     } else if (run.state !== 'finished') {
       status = 'not_measured'
-      outcome = 'not_run'
       notes.push('A new turn or a source change ended this run before it had a result.')
     } else {
-      outcome = run.exitCode === 0 ? 'passed' : 'failed'
       status = current && !run.definitionChanged ? 'measured' : 'stale'
       if (sourceMoved) notes.push('The source changed while the check ran, so it did not test one tree.')
       else if (!current) notes.push('The source has changed since this run, so it did not test the current tree.')
@@ -253,7 +247,7 @@ function checkEvidence(
       tree: run.treeBefore,
       name: run.name,
       definition_hash: run.definitionHash,
-      outcome,
+      outcome: bridgeCheckOutcome(run),
       exit_code: run.exitCode,
       signal: run.signal,
       started_at: new Date(run.startedAt).toISOString(),

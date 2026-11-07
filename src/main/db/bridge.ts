@@ -8,6 +8,7 @@ import {
   parseBridgeCheckDefinitions,
   type BridgeCallState,
   type BridgeCheckDefinition,
+  type BridgeCheckOutcome,
   type BridgeCheckSummary,
   type BridgeErrorCode,
   type BridgeOperation,
@@ -720,6 +721,13 @@ const toCheckRun = (r: CheckRunRow): BridgeCheckRun => ({
   startedAt: r.started_at,
   endedAt: r.ended_at,
 })
+
+/** What a recorded run ended as. Only a run that finished with exit 0 passed. */
+export function bridgeCheckOutcome(run: BridgeCheckRun): BridgeCheckOutcome {
+  if (run.state === 'unavailable') return 'unavailable'
+  if (run.state !== 'finished') return 'not_run'
+  return run.exitCode === 0 ? 'passed' : 'failed'
+}
 
 /** The hash a run is keyed by: the name, the program and the argument array. */
 export function bridgeCheckDefinitionHash(def: BridgeCheckDefinition): string {
