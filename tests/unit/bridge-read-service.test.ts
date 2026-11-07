@@ -39,7 +39,13 @@ import {
   updateConversationTitle,
 } from '../../src/main/db/database'
 import { secretRedactor } from '../../src/main/secrets/secret-redactor'
-import { BridgeReadService, plainSnippet, type BridgeLiveState } from '../../src/main/bridge/read-service'
+import {
+  BridgeReadService,
+  READ_CHAT_BUDGET_BYTES,
+  plainSnippet,
+  type BridgeLiveState,
+} from '../../src/main/bridge/read-service'
+import { jsonBytes } from '../../src/main/bridge/read-budget'
 import {
   bridgeProjectId,
   listBridgeProjectSetup,
@@ -415,8 +421,8 @@ describe('read_chat', () => {
     const first = ok(await measured.readChat({ chat: 't1' }))
     if (!('agent_reply' in first)) throw new Error('expected a snapshot')
     expect(first.agent_reply!.text).toContain('All tests passed')
-    expect(first.evidence.checks).toEqual({ status: 'not_measured', items: [] })
-    expect(first.evidence.pull_requests).toEqual({ status: 'not_measured', items: [] })
+    expect(first.evidence.checks).toEqual({ status: 'not_measured', items: [], omitted: 0 })
+    expect(first.evidence.pull_requests).toEqual({ status: 'not_measured', items: [], omitted: 0 })
 
     // A measured check is a change the cursor pages to, with the reply untouched.
     evidence = {
@@ -503,5 +509,119 @@ describe('the MCP tools', () => {
     expect(text).toContain('internal_error')
     expect(text).not.toContain(ROOT)
     expect(text).not.toContain('ENOENT')
+  })
+})
+
+describe("read_chat's size budget", () => {
+  const REPORT = Array.from({ length: 4600 }, (_, i) => `line ${i}: what the deepdive found, in plain words`).join('\n')
+
+  beforeEach(() => {
+    chat('t1', ALLOWED, 'Raves website')
+    insert('u1', 't1', 'make the header', 1_000, 'user')
+    insert('r1', 't1', 'done with the header', 2_000)
+    chat('big', ALLOWED, 'Roadmap deepdive')
+    for (let i = 0; i < 40; i += 1)
+      insert(`m${i}`, 'big', `message ${i}: `.padEnd(3000, 'context '), 10_000 + i, i % 2 === 0 ? 'user' : 'assistant')
+    insert('report', 'big', REPORT, 90_000)
+  })
+
+  it('leaves a short chat whole and marks nothing cut', async () => {
+    const snap = ok(await service.readChat({ chat: 't1' }))
+    if (!('agent_reply' in snap)) throw new Error('expected a snapshot')
+    expect(snap.truncated).toBe(false)
+    expect(snap.omitted).toEqual({ history: 0, pending: 0, pull_requests: 0, checks: 0 })
+    expect(snap.agent_reply).toMatchObject({
+      text: 'done with the header',
+      length: 'done with the header'.length,
+      offset: 0,
+      truncated: false,
+      next_offset: null,
+    })
+    expect(snap.history).toHaveLength(2)
+  })
+
+  it('fits a 200 KB reply and a long history, says what it cut and keeps the head and the tail', async () => {
+    expect(REPORT.length).toBeGreaterThan(200_000)
+    const snap = ok(await service.readChat({ chat: 'big' }))
+    if (!('agent_reply' in snap)) throw new Error('expected a snapshot')
+    expect(jsonBytes(snap)).toBeLessThanOrEqual(READ_CHAT_BUDGET_BYTES)
+    expect(snap.truncated).toBe(true)
+    expect(snap.agent_reply).toMatchObject({ message_id: 'report', length: REPORT.length, offset: 0, truncated: true })
+    expect(snap.agent_reply!.text).toContain('characters cut ...]')
+    expect(snap.agent_reply!.text.startsWith('line 0:')).toBe(true)
+    expect(snap.agent_reply!.text.endsWith('in plain words')).toBe(true)
+    // The oldest messages gave way first, and the answer says how many.
+    expect(snap.history.length).toBeGreaterThan(0)
+    expect(snap.omitted.history).toBe(20 - snap.history.length)
+    expect(snap.history.at(-1)!.message_id).toBe('report')
+  })
+
+  it('pages the rest of the reply in order, under the budget, until nothing is left', async () => {
+    const first = ok(await service.readChat({ chat: 'big' }))
+    if (!('agent_reply' in first)) throw new Error('expected a snapshot')
+    let offset: number | null = first.agent_reply!.next_offset
+    expect(offset).toBeGreaterThan(0)
+    let read = first.agent_reply!.text.slice(0, offset!)
+    let pages = 0
+    while (offset !== null) {
+      const page = ok(await service.readChat({ chat: 'big', reply_offset: offset }))
+      if (!('agent_reply' in page)) throw new Error('expected a snapshot')
+      expect(jsonBytes(page)).toBeLessThanOrEqual(READ_CHAT_BUDGET_BYTES)
+      expect(page.agent_reply!.offset).toBe(offset)
+      // A page is the reply, not the chat: the history is left out and counted.
+      expect(page.history).toEqual([])
+      expect(page.omitted.history).toBeGreaterThan(0)
+      read += page.agent_reply!.text
+      offset = page.agent_reply!.next_offset
+      pages += 1
+      expect(pages).toBeLessThan(40)
+    }
+    expect(read).toBe(REPORT)
+    expect(pages).toBeGreaterThan(1)
+  })
+
+  it('answers a page even when nothing changed since the cursor, and refuses a bad offset', async () => {
+    const first = ok(await service.readChat({ chat: 'big' }))
+    if (!('agent_reply' in first)) throw new Error('expected a snapshot')
+    expect(ok(await service.readChat({ chat: 'big', since: first.cursor }))).toMatchObject({ unchanged: true })
+    const page = ok(await service.readChat({ chat: 'big', since: first.cursor, reply_offset: 10 }))
+    expect(page).toMatchObject({ unchanged: false, agent_reply: { offset: 10 } })
+    for (const bad of [-1, 1.5, '4', Number.NaN]) {
+      const r = await service.readChat({ chat: 'big', reply_offset: bad })
+      expect(r.ok ? 'ok' : r.error.code).toBe('invalid_request')
+    }
+  })
+
+  it('keeps the newest open requests and counts the rest', async () => {
+    live.pending.set(
+      'big',
+      Array.from(
+        { length: 14 },
+        (_, i) =>
+          ({
+            type: 'request.opened',
+            requestId: `req-${i}`,
+            threadId: 'big',
+            toolName: 'Bash',
+            detail: `command ${i}`,
+          }) as unknown as PendingBlockingEvent,
+      ),
+    )
+    const snap = ok(await service.readChat({ chat: 'big' }))
+    if (!('agent_reply' in snap)) throw new Error('expected a snapshot')
+    expect(snap.pending.map((p) => p.request_id)).toEqual([
+      'req-4',
+      'req-5',
+      'req-6',
+      'req-7',
+      'req-8',
+      'req-9',
+      'req-10',
+      'req-11',
+      'req-12',
+      'req-13',
+    ])
+    expect(snap.omitted.pending).toBe(4)
+    expect(snap.truncated).toBe(true)
   })
 })

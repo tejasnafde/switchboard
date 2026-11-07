@@ -406,6 +406,24 @@ describe('BridgeRelayClient command frames', () => {
     })
   })
 
+  it('names the size and the limit when an answer is too large for one frame', async () => {
+    const h = harness([], async (frame) => ({
+      callId: String(frame.call_id),
+      ok: true,
+      result: { report: 'x'.repeat(70 * 1024) },
+    }))
+    h.client.start()
+    h.connect()
+    h.relay(command())
+    await flush()
+    const sent = h.sent().at(-1) as { ok: boolean; error: { code: string; message: string; bytes: number } }
+    expect(sent.ok).toBe(false)
+    expect(sent.error.code).toBe('internal_error')
+    expect(sent.error.bytes).toBeGreaterThan(64 * 1024)
+    expect(sent.error.message).toContain(String(sent.error.bytes))
+    expect(sent.error.message).toContain('65536')
+  })
+
   it('never runs a command for another machine, an older generation or a second time while it is running', async () => {
     let runs = 0
     let release = () => {}

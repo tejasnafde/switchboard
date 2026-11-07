@@ -166,19 +166,30 @@ export function buildBridgeTools(deps: BridgeToolDeps): McpTool[] {
       description:
         "A chat's status, latest agent reply, pending questions and approvals, and recent messages. chat is a chat " +
         'reference {machine_id, chat_id}, a chat id or a title. Pass the cursor from the last read as since to get ' +
-        'only changes, or unchanged: true.',
+        'only changes, or unchanged: true. An answer always fits one message, so a long reply and long lists are ' +
+        'cut: truncated says something was cut, omitted counts what each list left out, and agent_reply carries ' +
+        'length (the whole reply in characters), offset, truncated and next_offset. A cut reply shows its head and ' +
+        'its tail with a "[... N characters cut ...]" marker between them; read the rest in order by calling ' +
+        'read_chat again with reply_offset set to next_offset, until next_offset is null. A reply_offset read ' +
+        'returns that part of the reply and no history.',
       inputSchema: {
         type: 'object',
         properties: {
           chat: chatSchema,
           since: { type: 'string', description: 'The cursor from an earlier read_chat.' },
+          reply_offset: {
+            type: 'number',
+            description: 'Read the latest reply from this character offset on. Use next_offset from the last read.',
+          },
         },
         required: ['chat'],
         additionalProperties: false,
       },
       annotations: annotations('Read a bridge chat'),
       call: (args) =>
-        run('read_chat', args, async () => answer(await deps.service.readChat({ chat: args.chat, since: args.since }))),
+        run('read_chat', args, async () =>
+          answer(await deps.service.readChat({ chat: args.chat, since: args.since, reply_offset: args.reply_offset })),
+        ),
     },
     {
       name: 'start_chat',

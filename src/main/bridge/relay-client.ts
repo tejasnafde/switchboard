@@ -384,8 +384,9 @@ export class BridgeRelayClient {
       ...(answer.ok ? { result: answer.result } : { error: answer.error }),
     }
     let text = JSON.stringify(frame)
-    if (Buffer.byteLength(text) > MAX_RELAY_FRAME_BYTES) {
-      log.warn('a relay result was too large to send', { callId: answer.callId })
+    const bytes = Buffer.byteLength(text)
+    if (bytes > MAX_RELAY_FRAME_BYTES) {
+      log.warn('a relay result was too large to send', { callId: answer.callId, bytes, limit: MAX_RELAY_FRAME_BYTES })
       text = JSON.stringify({
         ...frame,
         ok: false,
@@ -393,8 +394,9 @@ export class BridgeRelayClient {
         error: {
           ...bridgeError(
             'internal_error',
-            'The answer was too large for one relay frame. Read the chat on this machine.',
-            { call_id: answer.callId },
+            `The answer was ${bytes} bytes, over the ${MAX_RELAY_FRAME_BYTES} byte limit of one relay frame. ` +
+              'Ask for less of it, or read the chat on this machine.',
+            { call_id: answer.callId, bytes, limit: MAX_RELAY_FRAME_BYTES },
           ),
           delivered: false,
           non_delivery_confirmed: false,
