@@ -45,6 +45,7 @@ import { maskStoredText } from '../db/secret-mask'
 import { loadConversationHistoryWindow } from '../conversations/history'
 import { createMainLogger } from '../logger'
 import { bridgeRealpath } from './allowlist'
+import { jsonBytes, previewText, windowText } from './read-budget'
 import { resolveLabel } from './resolve-label'
 
 const log = createMainLogger('bridge:read')
@@ -55,8 +56,19 @@ const BRIDGE_SNIPPET_MAX_CHARS = 240
 /** Messages a read_chat returns, newest last, and the cap on each one's text. */
 const READ_HISTORY_MESSAGES = 20
 const READ_MESSAGE_MAX_CHARS = 1000
-const READ_REPLY_MAX_CHARS = 4000
 const PENDING_SUMMARY_MAX_CHARS = 500
+/** A title is stored with no length of its own, and a row is not the place to read a long one. */
+const READ_TITLE_MAX_CHARS = 200
+/** Open questions and approvals one read returns, newest last. */
+const READ_PENDING_MAX = 10
+/**
+ * The whole JSON of one read_chat answer. The relay carries a result in one
+ * 64 KiB frame, so this leaves room for the frame's own fields and for the
+ * answer growing by a few bytes anywhere above this service.
+ */
+export const READ_CHAT_BUDGET_BYTES = 48 * 1024
+/** The reply keeps at least this much of the room, before any history. */
+const READ_REPLY_MIN_BYTES = 8 * 1024
 /** Threads whose live activity is remembered; the oldest goes first. */
 const ACTIVITY_MAX_THREADS = 500
 const CURSOR_PREFIX = 'brc1.'
@@ -134,6 +146,35 @@ export interface BridgePendingItem {
   summary: string
 }
 
+/**
+ * The newest stored reply. `partial` while a turn runs: the reply can still
+ * change. A reply too long for one answer is cut to fit; `text` then holds its
+ * head and its tail with a marker between them, and `next_offset` reads on.
+ */
+export interface BridgeReplyChunk {
+  message_id: string
+  text: string
+  at: string
+  partial: boolean
+  /** Characters in the whole reply, however much of it `text` holds. */
+  length: number
+  /** Where `text` starts in the whole reply. */
+  offset: number
+  /** `text` is not all of the reply from `offset` on. */
+  truncated: boolean
+  /** Pass as `reply_offset` to read the next part in order; null when there is no more. */
+  next_offset: number | null
+}
+
+/** What the answer had to leave out to fit its size budget. */
+export interface BridgeOmitted {
+  /** Messages dropped from the history window, oldest first. */
+  history: number
+  pending: number
+  pull_requests: number
+  checks: number
+}
+
 export interface BridgeChatSnapshot extends ResultBase {
   chat: BridgeChatRef
   title: string
@@ -144,13 +185,15 @@ export interface BridgeChatSnapshot extends ResultBase {
   /** Pass back as `since` to get only what changed. */
   cursor: string
   unchanged: boolean
-  /** The newest stored reply. `partial` while a turn runs: the reply can still change. */
-  agent_reply: { message_id: string; text: string; at: string; partial: boolean } | null
+  agent_reply: BridgeReplyChunk | null
   pending: BridgePendingItem[]
   /** Up to 20 messages, oldest first; after `since`, only the newer ones. */
   history: Array<{ message_id: string; role: 'user' | 'assistant'; text: string; at: string }>
   /** True when `since` named a message no longer in the window, so `history` starts over. */
   history_reset: boolean
+  /** Something in this answer was cut to fit, so it is not the whole picture. */
+  truncated: boolean
+  omitted: BridgeOmitted
   queued_bridge_messages: never[]
   call_receipts: never[]
   /** What this desktop observed, separate from `agent_reply`. Never the agent's own claim. */
@@ -346,7 +389,7 @@ export class BridgeReadService {
   ): BridgeChatRow {
     return {
       chat: { machine_id: machineId, chat_id: chat.id },
-      title: maskStoredText(chat.id, chat.title),
+      title: cap(maskStoredText(chat.id, chat.title), READ_TITLE_MAX_CHARS),
       project: { project_id: project.policy.project_id, label: project.policy.label },
       machine_id: machineId,
       last_activity_at: new Date(chat.activity).toISOString(),
@@ -534,6 +577,7 @@ export class BridgeReadService {
   async readChat(input: {
     chat: unknown
     since?: unknown
+    reply_offset?: unknown
   }): Promise<BridgeResult<BridgeChatSnapshot | BridgeUnchanged>> {
     const machineId = this.deps.machineId()
     const allowed = this.allowed(machineId)
@@ -542,6 +586,13 @@ export class BridgeReadService {
     const { row, project } = resolved.value
     const chatId = row.id
     const ref: BridgeChatRef = { machine_id: machineId, chat_id: chatId }
+
+    const replyOffset = parseReplyOffset(input.reply_offset)
+    if (replyOffset === 'invalid')
+      return {
+        ok: false,
+        error: bridgeError('invalid_request', 'reply_offset must be a whole number of characters, 0 or more.'),
+      }
 
     let since: CursorBody | null = null
     if (input.since !== undefined && input.since !== null) {
@@ -569,7 +620,9 @@ export class BridgeReadService {
     )
     const status = this.workState(chatId)
     const turnRunning = this.deps.live.status(chatId) === 'running' || this.deps.live.busy(chatId)
-    const pending = this.deps.live.pending(chatId).map(pendingItem)
+    const allPending = this.deps.live.pending(chatId).map(pendingItem)
+    // Newest last, as the history is: the oldest open requests give way first.
+    const pending = allPending.slice(-READ_PENDING_MAX)
     const reply = [...messages].reverse().find((m) => m.role === 'assistant') ?? null
     const newest = messages.at(-1)?.id ?? null
     const title = maskStoredText(chatId, row.title)
@@ -585,7 +638,7 @@ export class BridgeReadService {
           newest,
           reply?.id ?? null,
           reply?.content ?? null,
-          pending.map((p) => p.request_id),
+          allPending.map((p) => p.request_id),
           row.archived === 1,
           title,
           evidenceFingerprint(evidence),
@@ -600,10 +653,17 @@ export class BridgeReadService {
       p: project.policy.project_id,
       r: project.policy.revision,
       u: project.policy.updated_at,
-      k: key,
-      l: newest,
+      // A page of a long reply delivers no history, so it hands back the
+      // place and the fingerprint the caller was already at. A change that
+      // lands between the first read and the page is then still new to the
+      // next `since` read, rather than passing as unchanged and never shown.
+      k: replyOffset === null ? key : (since?.k ?? key),
+      l: replyOffset === null ? newest : (since?.l ?? null),
     })
-    if (since && since.k === key) return { ok: true, value: { ...base, chat: ref, unchanged: true, status, cursor } }
+    // A page of a long reply is asked for by offset, so it is always answered,
+    // even when nothing in the chat moved since the cursor was handed out.
+    if (since && since.k === key && replyOffset === null)
+      return { ok: true, value: { ...base, chat: ref, unchanged: true, status, cursor } }
 
     let shown = messages.slice(-READ_HISTORY_MESSAGES)
     let historyReset = false
@@ -613,38 +673,49 @@ export class BridgeReadService {
       else shown = messages.slice(at + 1).slice(-READ_HISTORY_MESSAGES)
     }
     const live = this.liveActivityByRoot()
+    // A page of a long reply carries no history: the whole budget is the page.
+    // A message cut by its own cap is a cut like any other, so the ids of the
+    // cut ones travel with the rows and mark the answer that keeps them.
+    const capped = new Set<string>()
+    const rows = (replyOffset === null ? shown : []).map((m) => {
+      const text = cap(m.content, READ_MESSAGE_MAX_CHARS)
+      if (text.length < m.content.length) capped.add(m.id)
+      return { message_id: m.id, role: m.role, text, at: new Date(m.timestamp).toISOString() }
+    })
     return {
       ok: true,
-      value: {
-        ...base,
-        chat: ref,
-        title,
-        project: { project_id: project.policy.project_id, label: project.policy.label },
-        archived: row.archived === 1,
-        status,
-        last_activity_at: new Date(this.lastActivity(chatId, row.created_at, live)).toISOString(),
-        cursor,
-        unchanged: false,
-        agent_reply: reply
-          ? {
-              message_id: reply.id,
-              text: cap(reply.content, READ_REPLY_MAX_CHARS),
-              at: new Date(reply.timestamp).toISOString(),
-              partial: turnRunning,
-            }
-          : null,
-        pending,
-        history: shown.map((m) => ({
-          message_id: m.id,
-          role: m.role,
-          text: cap(m.content, READ_MESSAGE_MAX_CHARS),
-          at: new Date(m.timestamp).toISOString(),
-        })),
-        history_reset: historyReset,
-        queued_bridge_messages: [],
-        call_receipts: [],
-        evidence,
-      },
+      value: fitChatSnapshot({
+        draft: {
+          ...base,
+          chat: ref,
+          title: cap(title, READ_TITLE_MAX_CHARS),
+          project: { project_id: project.policy.project_id, label: project.policy.label },
+          archived: row.archived === 1,
+          status,
+          last_activity_at: new Date(this.lastActivity(chatId, row.created_at, live)).toISOString(),
+          cursor,
+          unchanged: false,
+          agent_reply: null,
+          pending,
+          history: [],
+          history_reset: historyReset,
+          truncated: false,
+          omitted: {
+            history: shown.length - rows.length,
+            pending: allPending.length - pending.length,
+            pull_requests: evidence.pull_requests.omitted,
+            checks: evidence.checks.omitted,
+          },
+          queued_bridge_messages: [],
+          call_receipts: [],
+          evidence,
+        },
+        reply: reply && { message_id: reply.id, at: new Date(reply.timestamp).toISOString(), partial: turnRunning },
+        replyText: reply?.content ?? '',
+        replyOffset,
+        rows,
+        capped,
+      }),
     }
   }
 
@@ -661,16 +732,166 @@ export class BridgeReadService {
 }
 
 /**
- * The parts of the evidence a cursor is bound to: the statuses and the facts
- * themselves, without the observation times, which change on every read.
+ * The parts of the evidence a cursor is bound to: the statuses, the counts
+ * left out and the facts themselves, without the observation times, which
+ * change on every read. A fact a read did not measure is not in it: nothing
+ * read it, so nothing can tell that it moved.
  */
 function evidenceFingerprint(evidence: BridgeEvidence): unknown {
   const { observed_at: _at, ...code } = evidence.code
   return [
     code,
     evidence.pull_requests.status,
+    evidence.pull_requests.omitted,
     evidence.pull_requests.items.map(({ observed_at: _prAt, ...pr }) => pr),
     evidence.checks.status,
+    evidence.checks.omitted,
     evidence.checks.items.map(({ observed_at: _checkAt, ...check }) => check),
   ]
+}
+
+/**
+ * `reply_offset`: where in the latest reply to read from. Absent or null
+ * reads the reply's own preview. `invalid` is anything that is not a whole
+ * number of characters, 0 or more.
+ */
+export function parseReplyOffset(value: unknown): number | null | 'invalid' {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return 'invalid'
+  return value
+}
+
+interface FitInput {
+  /** The answer without its reply text and its history: both are budgeted below. */
+  draft: BridgeChatSnapshot
+  reply: { message_id: string; at: string; partial: boolean } | null
+  /** The whole reply, however much of it fits. */
+  replyText: string
+  replyOffset: number | null
+  /** The history window, oldest first, each message already capped. */
+  rows: BridgeChatSnapshot['history']
+  /** The ids in `rows` whose text that cap shortened. */
+  capped: Set<string>
+}
+
+/**
+ * One answer, inside the byte budget. The parts that can be long give way in
+ * order: the oldest history messages first, then the reply, which always
+ * keeps its head and its tail. Every cut is counted in the answer, so a
+ * reader is never shown a part as the whole.
+ */
+function fitChatSnapshot({ draft, reply, replyText, replyOffset, rows, capped }: FitInput): BridgeChatSnapshot {
+  // Everything but the two long parts, with every number as wide as it can
+  // become, so the room measured here is never more than what is left.
+  const shell = (snapshot: BridgeChatSnapshot): BridgeChatSnapshot => ({
+    ...snapshot,
+    agent_reply: reply && {
+      ...reply,
+      text: '',
+      length: replyText.length,
+      offset: replyText.length,
+      truncated: true,
+      next_offset: replyText.length,
+    },
+    history: [],
+    truncated: true,
+    omitted: { ...snapshot.omitted, history: snapshot.omitted.history + rows.length },
+  })
+  const roomIn = (snapshot: BridgeChatSnapshot): number =>
+    Math.max(READ_CHAT_BUDGET_BYTES - jsonBytes(shell(snapshot)), 0)
+  let header = draft
+  let room = roomIn(header)
+  // Only a pathological chat gets here: the measured facts and the open
+  // requests are already capped by count. The reply still has to be readable,
+  // so they give way to it rather than crowd it out.
+  for (const drop of [dropEvidenceItems, dropPendingItems]) {
+    if (room >= READ_REPLY_MIN_BYTES) break
+    header = drop(header)
+    room = roomIn(header)
+  }
+  const replyRoom = Math.max(Math.floor(room * 0.6), Math.min(room, READ_REPLY_MIN_BYTES))
+  const chunk = replyOffset === null ? previewText(replyText, replyRoom) : windowText(replyText, replyOffset, room)
+
+  let left = room - jsonBytes(chunk.text)
+  const kept: BridgeChatSnapshot['history'] = []
+  for (let i = rows.length - 1; i >= 0; i--) {
+    // One byte for the comma that joins this message to the next.
+    const cost = jsonBytes(rows[i]) + 1
+    if (cost > left) break
+    left -= cost
+    kept.unshift(rows[i])
+  }
+  const omitted = { ...header.omitted, history: header.omitted.history + rows.length - kept.length }
+  const answer: BridgeChatSnapshot = {
+    ...header,
+    agent_reply: reply && {
+      ...reply,
+      text: chunk.text,
+      length: replyText.length,
+      offset: chunk.offset,
+      truncated: chunk.truncated,
+      next_offset: chunk.nextOffset,
+    },
+    history: kept,
+    omitted,
+    truncated:
+      chunk.truncated || Object.values(omitted).some((n) => n > 0) || kept.some((row) => capped.has(row.message_id)),
+  }
+  // The arithmetic above holds, but the budget is a promise: never hand back
+  // an answer over it because one estimate was a few bytes out. The history
+  // gives way first, then the reply itself. A pass that does not make the
+  // answer smaller has nothing left to give, so the answer stands as it is:
+  // the loop ends on every input, however little room the chat left it.
+  let size = jsonBytes(answer)
+  while (size > READ_CHAT_BUDGET_BYTES) {
+    if (answer.history.length > 0) {
+      answer.history = answer.history.slice(1)
+      answer.omitted = { ...answer.omitted, history: answer.omitted.history + 1 }
+    } else if (answer.agent_reply && answer.agent_reply.text.length > 0) {
+      // A few bytes under what the overflow asks for, so the numbers around
+      // the text (a wider offset, a longer count) cannot eat the cut again.
+      const slack = 16
+      const smaller = Math.max(jsonBytes(answer.agent_reply.text) - (size - READ_CHAT_BUDGET_BYTES) - slack, 0)
+      const cut = replyOffset === null ? previewText(replyText, smaller) : windowText(replyText, replyOffset, smaller)
+      answer.agent_reply = {
+        ...answer.agent_reply,
+        text: cut.text,
+        offset: cut.offset,
+        truncated: cut.truncated,
+        next_offset: cut.nextOffset,
+      }
+    } else break
+    answer.truncated = true
+    const next = jsonBytes(answer)
+    if (next >= size) break
+    size = next
+  }
+  return answer
+}
+
+/** The measured facts without their items: the statuses and the counts stay. */
+function dropEvidenceItems(snapshot: BridgeChatSnapshot): BridgeChatSnapshot {
+  const { pull_requests: prs, checks } = snapshot.evidence
+  return {
+    ...snapshot,
+    evidence: {
+      ...snapshot.evidence,
+      pull_requests: { ...prs, items: [], omitted: prs.omitted + prs.items.length },
+      checks: { ...checks, items: [], omitted: checks.omitted + checks.items.length },
+    },
+    omitted: {
+      ...snapshot.omitted,
+      pull_requests: snapshot.omitted.pull_requests + prs.items.length,
+      checks: snapshot.omitted.checks + checks.items.length,
+    },
+  }
+}
+
+/** The open requests, counted but not listed. The work state still names them. */
+function dropPendingItems(snapshot: BridgeChatSnapshot): BridgeChatSnapshot {
+  return {
+    ...snapshot,
+    pending: [],
+    omitted: { ...snapshot.omitted, pending: snapshot.omitted.pending + snapshot.pending.length },
+  }
 }

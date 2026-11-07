@@ -221,8 +221,8 @@ describe('measured evidence', () => {
     const empty = emptyBridgeEvidence('2026-11-07T00:00:00.000Z')
     expect(empty.code.status).toBe('not_measured')
     expect(empty.code.attribution).toBe('unknown')
-    expect(empty.pull_requests).toEqual({ status: 'not_measured', items: [] })
-    expect(empty.checks).toEqual({ status: 'not_measured', items: [] })
+    expect(empty.pull_requests).toEqual({ status: 'not_measured', items: [], omitted: 0 })
+    expect(empty.checks).toEqual({ status: 'not_measured', items: [], omitted: 0 })
   })
 
   it('rolls up to the worst status, so one unread fact is not a measured whole', () => {

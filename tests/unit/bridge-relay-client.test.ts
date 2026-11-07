@@ -289,6 +289,16 @@ describe('BridgeRelayClient', () => {
     expect(h.timers.delays.at(-1)).toBe(2_000)
   })
 
+  it('reads a frame_too_large close as a refusal, whatever numbers its reason names', () => {
+    const h = harness()
+    h.client.start()
+    h.relay({ type: 'challenge', nonce: h.nonce, wire_version: 1 })
+    h.last().on.onClose(4012, 'frame_too_large: 70135 bytes, limit 65536')
+    expect(h.client.status()).toMatchObject({ state: 'rejected', code: 'frame_too_large' })
+    // Retried on the slow curve, so a misconfigured desktop does not hammer the relay.
+    expect(h.timers.delays.at(-1)).toBe(30_000)
+  })
+
   it('a newer connection elsewhere fences this one: replaced, then retried', () => {
     const h = harness()
     h.client.start()
@@ -404,6 +414,24 @@ describe('BridgeRelayClient command frames', () => {
       ok: false,
       error: { code: 'killed', delivered: false, non_delivery_confirmed: true },
     })
+  })
+
+  it('names the size and the limit when an answer is too large for one frame', async () => {
+    const h = harness([], async (frame) => ({
+      callId: String(frame.call_id),
+      ok: true,
+      result: { report: 'x'.repeat(70 * 1024) },
+    }))
+    h.client.start()
+    h.connect()
+    h.relay(command())
+    await flush()
+    const sent = h.sent().at(-1) as { ok: boolean; error: { code: string; message: string; bytes: number } }
+    expect(sent.ok).toBe(false)
+    expect(sent.error.code).toBe('internal_error')
+    expect(sent.error.bytes).toBeGreaterThan(64 * 1024)
+    expect(sent.error.message).toContain(String(sent.error.bytes))
+    expect(sent.error.message).toContain('65536')
   })
 
   it('never runs a command for another machine, an older generation or a second time while it is running', async () => {

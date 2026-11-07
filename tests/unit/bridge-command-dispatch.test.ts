@@ -240,6 +240,15 @@ describe('a full owner call for each tool', () => {
     expect(host.interrupts).toContain(chat.chat_id)
   })
 
+  it('passes a read_chat page offset to the read service and refuses one that is not a count', async () => {
+    idleChat('c1')
+    const chat = { machine_id: MACHINE, chat_id: 'c1' }
+    const page = await ok(frame('read_chat', { chat, reply_offset: 0 }))
+    expect(page).toMatchObject({ chat, history: [] })
+    expect(await bad(frame('read_chat', { chat, reply_offset: -4 }))).toMatchObject({ code: 'invalid_request' })
+    expect(await bad(frame('read_chat', { chat, reply_offset: '4' }))).toMatchObject({ code: 'invalid_request' })
+  })
+
   it('records the relay call id and keeps the call receipt under it', async () => {
     const f = frame('start_chat', { project: 'Raves site', message: 'Fix the header' })
     const started = await ok(f)

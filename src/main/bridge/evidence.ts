@@ -11,12 +11,14 @@
  * never an absence of a problem.
  */
 import {
+  BRIDGE_EVIDENCE_CHECK_MAX,
+  BRIDGE_EVIDENCE_PR_MAX,
   emptyBridgeEvidence,
   rollUpBridgeEvidence,
   type BridgeCheckEvidence,
   type BridgeCodeEvidence,
   type BridgeEvidence,
-  type BridgeEvidenceStatus,
+  type BridgeEvidenceGroup,
   type BridgePrEvidence,
 } from '@shared/bridge'
 import { prKey, type PrRef, type PrState } from '@shared/pull-requests'
@@ -199,9 +201,12 @@ async function prEvidence(
   facts: BridgeGitFacts | null,
   observedAt: string,
   deps: BridgeEvidenceDeps,
-): Promise<{ status: BridgeEvidenceStatus; items: BridgePrEvidence[] }> {
-  const refs = deps.prLinks(chatId)
-  if (refs.length === 0) return { status: 'not_measured', items: [] }
+): Promise<BridgeEvidenceGroup<BridgePrEvidence>> {
+  const links = deps.prLinks(chatId)
+  if (links.length === 0) return { status: 'not_measured', items: [], omitted: 0 }
+  // Newest first, then the cap: an older link is never read, so it costs no
+  // host call and never makes the answer too large for one relay frame.
+  const refs = [...links].reverse().slice(0, BRIDGE_EVIDENCE_PR_MAX)
   const items = await Promise.all(
     refs.map(async (ref): Promise<BridgePrEvidence> => {
       const base = {
@@ -247,7 +252,7 @@ async function prEvidence(
       }
     }),
   )
-  return { status: rollUpBridgeEvidence(items.map((i) => i.status)), items }
+  return { status: rollUpBridgeEvidence(items.map((i) => i.status)), items, omitted: links.length - refs.length }
 }
 
 /**
@@ -270,9 +275,11 @@ function checkEvidence(
   facts: BridgeGitFacts | null,
   observedAt: string,
   deps: BridgeEvidenceDeps,
-): { status: BridgeEvidenceStatus; items: BridgeCheckEvidence[] } {
-  const runs = deps.checkRuns(chatId)
-  if (runs.length === 0) return { status: 'not_measured', items: [] }
+): BridgeEvidenceGroup<BridgeCheckEvidence> {
+  const all = deps.checkRuns(chatId)
+  if (all.length === 0) return { status: 'not_measured', items: [], omitted: 0 }
+  // `checkRuns` is newest first; a read keeps that many and counts the rest.
+  const runs = all.slice(0, BRIDGE_EVIDENCE_CHECK_MAX)
   const items = runs.map((run): BridgeCheckEvidence => {
     const { status, sourceMoved, current } = projectBridgeCheckRun(run, facts?.tree ?? null)
     const notes: string[] = []
@@ -310,5 +317,5 @@ function checkEvidence(
       note: notes.join(' '),
     }
   })
-  return { status: rollUpBridgeEvidence(items.map((i) => i.status)), items }
+  return { status: rollUpBridgeEvidence(items.map((i) => i.status)), items, omitted: all.length - runs.length }
 }
