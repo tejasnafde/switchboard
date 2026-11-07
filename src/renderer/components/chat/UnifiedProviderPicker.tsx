@@ -180,7 +180,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
                   the corner. The button title names it at every width. */}
               <span aria-hidden className="relative inline-flex size-[18px] shrink-0 items-center justify-center">
                 <AgentMark agent={agentType} size={14} className="text-[var(--text-primary)]" />
-                {showAccount && (
+                {showAccount && effectiveInstance && (
                   <span className="absolute right-0 bottom-0 hidden size-[6px] rounded-full bg-[var(--pick-accent)] shadow-[0_0_0_1px_var(--bg-tertiary)] @max-[680px]/toolbar:block" />
                 )}
               </span>

@@ -86,7 +86,9 @@ describe('toolbar container queries', () => {
   it('show the account dot only below the step that hides the account name', () => {
     const picker = read('chat/UnifiedProviderPicker.tsx')
     expect(picker).toContain('@max-[680px]/toolbar:sr-only')
-    const dot = picker.match(/\{showAccount && \(\s*<span className="([^"]+)"/)
+    // The dot stands in for the account name, so it needs an account to name:
+    // with every instance deleted or disabled there is none and it stays off.
+    const dot = picker.match(/\{showAccount && effectiveInstance && \(\s*<span className="([^"]+)"/)
     expect(dot).not.toBeNull()
     const [, classes] = dot as RegExpMatchArray
     expect(classes).toMatch(/\bhidden\b/)
