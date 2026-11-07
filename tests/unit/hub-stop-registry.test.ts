@@ -30,6 +30,8 @@ const db = vi.hoisted(() => ({
   children: [] as Array<{ childId: string; parentId: string; title: string; phase: string }>,
   wakes: [] as Array<Record<string, unknown>>,
   held: new Map<string, string | null>(),
+  /** `conversations.session_id`, which a restart reads to resume a child. */
+  sessionIds: new Map<string, string>(),
 }))
 
 vi.mock('../../src/main/db/database', () => ({
@@ -38,7 +40,12 @@ vi.mock('../../src/main/db/database', () => ({
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: () => true,
   rewriteSystemMarker: () => null,
-  getConversationById: (id: string) => ({ id, project_path: process.cwd() }),
+  getConversationById: (id: string) => ({
+    id,
+    project_path: process.cwd(),
+    agent_type: 'claude-code',
+    session_id: db.sessionIds.get(id) ?? null,
+  }),
   getConversationTitle: () => null,
   resolveRootThreadId: (id: string) => id,
   getConversationRuntimeMode: () => null,
@@ -153,6 +160,7 @@ async function setup(childCount = 2) {
   }))
   db.wakes.length = 0
   db.held.clear()
+  db.sessionIds.clear()
   const host = new FakeHost()
   const adapter = new Adapter()
   const mcp = fakeMcp()
@@ -356,5 +364,70 @@ describe('a reaped child', () => {
     })
     expect(adapter.starts.filter((s) => s.threadId === 'child1').at(-1)).toMatchObject({ resumeSessionId: 'sess-1' })
     expect(registry['sessionAdapters'].has('child1')).toBe(true)
+  })
+})
+
+describe('a child with no session', () => {
+  it('starts from its stored row for its parent message, after a restart lost the reaped options', async () => {
+    const { host, adapter, registry } = await setup()
+    db.sessionIds.set('child1', 'sess-restart')
+    // A restart: the session is gone and nothing of it is in memory.
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    expect(registry['sessionAdapters'].has('child1')).toBe(false)
+    expect(registry['reapedChildren'].has('child1')).toBe(false)
+    await registry.deliverPeerMessage({
+      fromThreadId: 'parent1',
+      targetThreadId: 'child1',
+      text: 'Go on with the migration.',
+      initiator: 'agent',
+    })
+    expect(adapter.starts.filter((s) => s.threadId === 'child1').at(-1)).toMatchObject({
+      resumeSessionId: 'sess-restart',
+      cwd: process.cwd(),
+    })
+    expect(registry['sessionAdapters'].has('child1')).toBe(true)
+  })
+
+  it('starts the same way for the row Resume, which had nothing to resume after a restart', async () => {
+    const { host, adapter, registry } = await setup()
+    db.sessionIds.set('child1', 'sess-restart')
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    const result = await registry.resumeHubChild('child1')
+    expect(result).toEqual({ ok: true })
+    expect(adapter.starts.filter((s) => s.threadId === 'child1').at(-1)).toMatchObject({
+      resumeSessionId: 'sess-restart',
+    })
+  })
+
+  it('leaves a child of another phase alone', async () => {
+    const { host, registry, adapter } = await setup()
+    db.children[0]!.phase = 'starting'
+    await host.invoke(ProviderChannels.STOP_SESSION, 'child1')
+    const before = adapter.starts.length
+    await expect(
+      registry.deliverPeerMessage({
+        fromThreadId: 'parent1',
+        targetThreadId: 'child1',
+        text: 'Go on.',
+        initiator: 'agent',
+      }),
+    ).rejects.toThrow(/is not running/)
+    expect(adapter.starts).toHaveLength(before)
+  })
+})
+
+describe('interrupt_child and the messages behind the turn', () => {
+  it('gives the parent back what the stop dropped', async () => {
+    const { adapter, busy, event, tool } = await setup()
+    busy('child1')
+    event({ type: 'turn.queued', threadId: 'child1', messageId: 'q1', text: 'Also update the changelog.' })
+    event({ type: 'turn.queued', threadId: 'child1', messageId: 'q2', text: 'Then push the branch.' })
+    const text = (await tool('parent1', 'interrupt_child').call({ childId: 'child1' })).content[0]
+    expect(text).toMatchObject({
+      text:
+        'Stopped Child 1. 2 messages waited behind its turn and did not run. Send them again when it goes on:\n' +
+        '- Also update the changelog.\n- Then push the branch.',
+    })
+    expect(adapter.interrupted).toEqual(['child1'])
   })
 })

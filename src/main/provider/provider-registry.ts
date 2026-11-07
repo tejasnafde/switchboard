@@ -96,6 +96,7 @@ import {
   commitConversationExecutionRoot,
   setConversationRuntimeMode,
   getConversationModel,
+  getConversationProviderInstanceId,
   getConversationPendingHandoff,
   clearConversationPendingHandoff,
 } from '../db/database'
@@ -1109,16 +1110,50 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   /**
-   * A reaped child resumes for its parent's message: its session starts again
-   * from where the reaper stopped it. Returns the id it runs under.
+   * The start options of an open child whose session this process never ran:
+   * after a restart nothing is in `reapedChildren`, so its stored row is the
+   * only source. Null when the row cannot name a folder, when the child is
+   * still starting (its launch owns the start) or when it runs elsewhere.
+   */
+  private storedChildStartOpts(childId: string): SessionStartOpts | null {
+    const child = getHubChild(childId)
+    if (!child || child.phase !== 'open' || child.machineId) return null
+    const row = getConversationById(childId)
+    const root = getConversationExecutionRoot(childId)
+    const cwd = root?.worktreePath ?? root?.projectPath ?? row?.project_path
+    if (!row || !cwd) return null
+    const stored = getConversationRuntimeMode(childId) ?? child.grantedMode
+    const mode = isRuntimeMode(stored) ? stored : undefined
+    const model = getConversationModel(childId) ?? child.requestedModel
+    const instanceId = getConversationProviderInstanceId(childId) ?? child.providerInstanceId
+    return {
+      threadId: childId,
+      provider: providerKindFor(row.agent_type),
+      cwd,
+      ...(mode ? { runtimeMode: mode } : {}),
+      ...(model ? { model } : {}),
+      ...(row.session_id ? { resumeSessionId: row.session_id } : {}),
+      ...(instanceId ? { instanceId } : {}),
+    }
+  }
+
+  /**
+   * A child with no session resumes for its parent's message: a reaped one
+   * from where the reaper stopped it, and one this process never ran from its
+   * stored row, so a restart does not leave an idle child nobody can wake.
+   * Returns the id it runs under.
    */
   private async resumeReapedChild(childId: string, threadId: string): Promise<string> {
-    const opts = this.reapedChildren.get(childId)
+    // It never stopped, or the user opened it meanwhile. Before the stored
+    // row is read, so an ordinary message to a live child reads nothing.
+    const live = this.liveSessionId(childId)
+    if (live) {
+      this.reapedChildren.delete(childId)
+      return live
+    }
+    const opts = this.reapedChildren.get(childId) ?? this.storedChildStartOpts(childId)
     if (!opts) return threadId
     this.reapedChildren.delete(childId)
-    // The user opened it meanwhile.
-    const live = this.liveSessionId(childId)
-    if (live) return live
     const span = perfSpan('hub.resume-reaped', { childId })
     try {
       await this.startManagedSession(opts)
@@ -4121,6 +4156,11 @@ export class ProviderRegistry implements PeerToolHost {
                   if (!child || child.parentId !== chatId() || !isOpenChildPhase(child.phase))
                     return toolText('That is not an open child of this chat.', true)
                   if (child.machineId && !this.remoteControlOf(child)) return toolText(HUB_REMOTE_STOP_LATER_TEXT, true)
+                  // The stop drops what waits behind the turn, so the parent
+                  // is given the text back rather than losing it silently.
+                  const dropped = this.listQueuedTurns(child.childId)
+                    .map((q) => q.text.trim())
+                    .filter(Boolean)
                   let ran: boolean
                   try {
                     ran = await this.stopHubChild(child.childId, 'parent')
@@ -4130,7 +4170,13 @@ export class ProviderRegistry implements PeerToolHost {
                       true,
                     )
                   }
-                  return toolText(ran ? `Stopped ${child.title}.` : `${child.title} had no running turn.`)
+                  const held =
+                    dropped.length === 0
+                      ? ''
+                      : ` ${dropped.length} message${dropped.length === 1 ? '' : 's'} waited behind its turn and did` +
+                        ` not run. Send ${dropped.length === 1 ? 'it' : 'them'} again when it goes on:\n` +
+                        dropped.map((text) => `- ${text}`).join('\n')
+                  return toolText((ran ? `Stopped ${child.title}.` : `${child.title} had no running turn.`) + held)
                 },
                 read: (args) =>
                   readChild(

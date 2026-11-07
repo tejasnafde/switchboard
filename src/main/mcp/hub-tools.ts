@@ -381,8 +381,9 @@ export function buildHubMcpTools(ctx: HubMcpToolContext): McpTool[] {
       name: INTERRUPT_CHILD_TOOL,
       description: [
         "Stop one of this chat's child chats: its running turn, its auto-resume after a usage limit, its open cards",
-        'and its queued messages. Its worktree, branch and history stay, and a message from this chat starts it',
-        'again. A child with no running turn is left as it is, and the call still succeeds.',
+        'and the messages waiting behind its turn, whose text comes back in the answer so you can send them again.',
+        'Its worktree, branch and history stay, and a message from this chat starts it again. A child with no',
+        'running turn is left as it is, and the call still succeeds.',
       ].join(' '),
       inputSchema: {
         type: 'object',
