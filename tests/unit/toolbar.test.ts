@@ -80,6 +80,21 @@ describe('toolbar container queries', () => {
     expect(read('chat/UnifiedProviderPicker.tsx')).toContain('@max-[680px]/toolbar:hidden')
   })
 
+  // The composer chip writes " · <account>" beside the agent mark, so a
+  // corner badge there repeated the name and, at 10 px on a 14 px mark, read
+  // as a broken chip. The dot is kept for the one width that drops the name.
+  it('show the account dot only below the step that hides the account name', () => {
+    const picker = read('chat/UnifiedProviderPicker.tsx')
+    expect(picker).toContain('@max-[680px]/toolbar:sr-only')
+    // The dot stands in for the account name, so it needs an account to name:
+    // with every instance deleted or disabled there is none and it stays off.
+    const dot = picker.match(/\{showAccount && effectiveInstance && \(\s*<span className="([^"]+)"/)
+    expect(dot).not.toBeNull()
+    const [, classes] = dot as RegExpMatchArray
+    expect(classes).toMatch(/\bhidden\b/)
+    expect(classes).toContain('@max-[680px]/toolbar:block')
+  })
+
   it('keep the row on one line', () => {
     expect(toolbar).toContain("'@container/toolbar flex items-center'")
     expect(footer).toContain('flex-nowrap')

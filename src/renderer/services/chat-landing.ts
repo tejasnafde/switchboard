@@ -5,6 +5,7 @@
  * (`draftSessionId`), so nothing here creates anything.
  */
 import type { Project, SessionSummary } from '@shared/types'
+import { isHubChild } from '@shared/hub'
 import { isDraftSessionId } from '@shared/new-chat-draft'
 import { createRendererLogger } from '../logger'
 
@@ -204,6 +205,9 @@ export function recentLandingChats(local: readonly Project[], remote: RemoteProj
       for (const session of project.sessions ?? []) {
         // An older remote backend still lists its retired Terminal chats.
         if (session.agentType === 'terminal') continue
+        // An open child chat is reached through its parent, as in the
+        // sidebar Recents, so it takes no row of its own here.
+        if (isHubChild(session)) continue
         const key = `${machineId}\u0000${session.id}`
         if (seen.has(key)) continue
         seen.add(key)
