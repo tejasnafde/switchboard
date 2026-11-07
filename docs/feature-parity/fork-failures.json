@@ -1,0 +1,75 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "fork-failures",
+  "summary": "Two fixes to conversation forking. (1) The fork commit no longer writes conversations.launch_config_name, a column no migration adds, which made every fork fail with 'SqliteError: table conversations has no column named launch_config_name'. The launch config the fork inherits is stored on session_layouts, the row that already owns that column and that app:load-session reads it back from: the fork gets the name with no panes, so it hydrates the same launch config against its own execution root. (2) 'Fork conversation into a new worktree from current HEAD' is left out of the fork menu in a folder that is not a git work tree, on the desktop and on both phones. Each surface reads git:current-branch for the chat's execution root and drops the choice only on an answer that proves the folder is not a work tree, or is gone; a read that failed for another reason, or that has not answered within 1.5 s, keeps it. The shared rule is offerForkIntoWorktree, the rule the branch chip already used. A request that still arrives is refused by the git adapter with 'Not a git repository: <path>', before any other git command can lose the race with a rawer message.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/hooks/useTerminalLifecycle.ts",
+        "src/shared/conversation-fork.ts",
+        "tests/unit/fork-status-gate.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "src/shared/conversation-fork.ts",
+        "tests/unit/fork-status-gate.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/GitContextPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/GitContextPresentationTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/conversation-fork.ts",
+        "src/main/worktree-creation/git-adapter.ts",
+        "src/main/conversations/fork-source.ts",
+        "src/main/ipc/app.ts",
+        "src/shared/conversation-fork.ts",
+        "tests/unit/conversation-fork-store.test.ts",
+        "tests/unit/conversation-fork-coordinator.test.ts",
+        "tests/unit/conversation-write-columns.test.ts",
+        "tests/unit/worktree-creation-git-adapter.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/conversation-fork.ts",
+        "src/main/db/conversations.ts",
+        "tests/unit/conversation-write-columns.test.ts",
+        "tests/unit/conversation-fork-store.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No schema change, no new channel and no new capability: the fork commit writes an existing column set and an existing session_layouts row, and every surface reads git:current-branch, which backends already serve. An older or newer client needs nothing new."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/conversation-fork-store.test.ts tests/unit/conversation-fork-coordinator.test.ts tests/unit/conversation-write-columns.test.ts tests/unit/worktree-creation-git-adapter.test.ts tests/unit/fork-status-gate.test.ts",
+      "The fork store and coordinator tests now build the app's own migrated schema (createMigratedDb) instead of a hand-rolled conversations table; the old fixture invented launch_config_name, which is why the crash shipped. One test builds the three tables the first release shipped, migrates them and forks on that database, so a column only a fresh schema has cannot pass.",
+      "tests/unit/conversation-write-columns.test.ts fails if any INSERT INTO conversations in src/main names a column migrate() does not create.",
+      "apps/android: GitContextPresentationTest covers the rule the fork sheet reads, including a transport error, which must not hide the choice.",
+      "npm run typecheck, and tsc --noEmit in apps/mobile"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Forking by hand on a phone against a folder that is not a git repository. Both phones hide the new-worktree choice from the branch read they already make for that chat, and show the backend refusal unchanged if a request still arrives (ThreadScreen.tsx reportError, SwitchboardNavigation.kt 'Fork failed' dialog). Neither was run on a device for this change.",
+      "A phone whose branch read has not answered within 1.5 s keeps the choice, as the desktop menu does, and the backend refuses a request it cannot serve."
+    ]
+  }
+}
