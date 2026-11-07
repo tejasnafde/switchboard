@@ -69,9 +69,25 @@ import {
 import { turnAcceptanceStateByOrigin } from '../db/turn-acceptance'
 import { createMainLogger } from '../logger'
 import type { SessionStartOpts } from '../provider/types'
+import { bridgeCheckService } from './check-service'
 import { bridgeProjectAgents, type AllowedProject, type BridgeReadService, type BridgeResult } from './read-service'
 
 const log = createMainLogger('bridge:delivery')
+
+/**
+ * Records the baseline a later read diffs against (`noteBridgeCall`). The
+ * caller AWAITS it before the turn can write: a baseline taken while the
+ * agent writes already holds that write, and the read would then report
+ * that nothing changed. A failure leaves the baseline as it was.
+ */
+async function noteBridgeCallBaseline(chatId: string, cwd: string | null): Promise<void> {
+  if (!cwd) return
+  try {
+    await bridgeCheckService()?.noteBridgeCall(chatId, cwd)
+  } catch (err) {
+    log.warn('recording the bridge turn baseline failed', { err: String(err) })
+  }
+}
 
 export const BRIDGE_MESSAGE_MAX_CHARS = 20_000
 const IDEMPOTENCY_KEY_MAX_CHARS = 200
@@ -370,6 +386,9 @@ export class BridgeDeliveryService {
         })
       })()
       const fence = this.fence(chatId)
+      // Before the provider starts, so no write of this turn is in the baseline.
+      // The fence above is taken first, so a stop during this read still fences the start.
+      await noteBridgeCallBaseline(chatId, project.sidebarPath)
       const ref = { machine_id: machineId, chat_id: chatId }
       try {
         const session = await this.host.startSession({
@@ -473,6 +492,11 @@ export class BridgeDeliveryService {
         policyRevision: project.policy.revision,
         source: callerSource(caller),
       })
+      const root = getConversationExecutionRoot(chatId)
+      // Before the message is delivered, so no write of this turn is in the baseline.
+      await noteBridgeCallBaseline(chatId, root?.worktreePath ?? root?.projectPath ?? null)
+      // That read awaited: a stop may have come meanwhile.
+      if (this.fenced(chatId, fence)) return this.reject(callId, stoppedBeforeSend(ref))
       const live = this.host.liveThread(chatId) ?? chatId
       const actual: BridgeActualDelivery =
         peerDelivery(this.host.provider(live), this.host.midTurn(live), requested, this.host.steerBlocked(live)) ??
@@ -530,6 +554,9 @@ export class BridgeDeliveryService {
     this.active.add(callId)
     try {
       updateBridgeCallState(callId, 'dispatching')
+      // Recorded before the Stop runs, as a stop of every group does: the
+      // check service schedules nothing more for the turn this stop ends.
+      setBridgeOriginStopState([chatId], 'pending')
       let status: 'stopped'
       try {
         status = await this.halt(chatId)
@@ -857,14 +884,19 @@ export class BridgeDeliveryService {
   }
 
   /**
-   * The chat's own stop: its queued bridge messages are taken back (the
-   * owner's own queued messages stay, held as after any Stop), then the
-   * user's Stop runs until the chat has no turn left. An adapter ignores a
+   * The chat's own stop: the configured check this desktop is running for it
+   * is killed and recorded as cancelled, its queued bridge messages are taken
+   * back (the owner's own queued messages stay, held as after any Stop), then
+   * the user's Stop runs until the chat has no turn left. An adapter ignores a
    * Stop that comes before its provider took the turn, so the Stop is sent
    * again until the turn ends; a turn still running at the deadline throws,
    * and the caller answers `stop_unconfirmed`.
    */
   private async halt(chatId: string): Promise<'stopped'> {
+    // A program this desktop started for the chat is bridge work too: it is
+    // killed here, so it can never finish as a pass the stop did not reach.
+    if (bridgeCheckService()?.cancel(chatId) === false)
+      throw new Error('a running check could not be recorded as cancelled')
     const deadline = this.now() + this.timing.stopConfirmMs
     for (;;) {
       // Every round: a bridge message can be queued while the stop runs.

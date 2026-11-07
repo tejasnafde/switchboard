@@ -27,6 +27,8 @@ const removeBridgeProject = vi.fn()
 const deviceStatus = vi.fn()
 const enrollDevice = vi.fn()
 const removeDevice = vi.fn()
+const bridgeChecks = vi.fn()
+const setBridgeChecks = vi.fn()
 const stopStatus = vi.fn()
 const stopAll = vi.fn()
 const clearKill = vi.fn()
@@ -71,6 +73,7 @@ const STOP = {
 
 beforeEach(() => {
   deviceStatus.mockResolvedValue({ ...DEVICE, enabled: false, state: 'off' })
+  bridgeChecks.mockResolvedValue({ enabled: true, projects: [] })
   stopStatus.mockResolvedValue(STOP)
   rows = new Map()
   forced = []
@@ -86,6 +89,8 @@ beforeEach(() => {
         listProjects: bridgeProjects,
         setProjectAllowed,
         removeProject: removeBridgeProject,
+        listChecks: bridgeChecks,
+        setChecks: setBridgeChecks,
         deviceStatus,
         enrollDevice,
         setDeviceLabel: vi.fn(),
@@ -153,6 +158,43 @@ describe('Labs page', () => {
     await act(async () => box.click())
     expect(setProjectAllowed).toHaveBeenCalledWith('/repo', true)
     expect(box.getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('lists the configured checks with what was measured, and adds one as a program and arguments', async () => {
+    rows.set('labs.instinct_bridge', 'true')
+    bridgeProjects.mockResolvedValue({ enabled: true, projects: [] })
+    const project = {
+      project_id: 'bproj_1',
+      label: 'repo',
+      checks: [{ name: 'tests', program: 'npm', args: ['test'] }],
+      results: [{ name: 'tests', status: 'measured', outcome: 'failed', exit_code: 1, at: 1_700_000_000_000 }],
+    }
+    bridgeChecks.mockResolvedValue({ enabled: true, projects: [project] })
+    setBridgeChecks.mockResolvedValue({ enabled: true, projects: [project] })
+    await mount()
+    const panel = container.querySelector('[data-testid="bridge-checks"]')!
+    expect(panel.textContent).toContain('npm test')
+    expect(panel.textContent).toContain('Failed (exit 1)')
+
+    const field = (label: string) => panel.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!
+    for (const [label, value] of [
+      ['Check name for repo', 'lint'],
+      ['Check program for repo', 'npm'],
+      ['Check arguments for repo', ' run  lint '],
+    ] as const) {
+      const input = field(label)
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      await act(async () => {
+        setter.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const add = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Add')!
+    await act(async () => add.click())
+    expect(setBridgeChecks).toHaveBeenCalledWith('bproj_1', [
+      { name: 'tests', program: 'npm', args: ['test'] },
+      { name: 'lint', program: 'npm', args: ['run', 'lint'] },
+    ])
   })
 
   it('lists an orphaned bridge project as allowed and removes it by id', async () => {

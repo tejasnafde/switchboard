@@ -225,6 +225,9 @@ import { RuntimeEventRedaction, type RedactedEvents } from '../secrets/runtime-e
 import { SecretRequestLimiter, SECRET_INSTRUCTIONS, buildSecretMcpTools } from '../mcp/secret-tools'
 import { buildBridgeTools } from '../mcp/bridge-tools'
 import { BridgeReadService } from '../bridge/read-service'
+import { BridgeCheckService, setBridgeCheckService } from '../bridge/check-service'
+import { bridgeEvidenceReader } from '../bridge/evidence'
+import { readPullRequestForBridge } from '../ipc/pull-requests'
 import { BridgeDeliveryService, type BridgeDeliveryHost } from '../bridge/delivery-service'
 import { instinctBridgeEnabled } from '@shared/bridge'
 import {
@@ -625,8 +628,18 @@ export class ProviderRegistry implements PeerToolHost {
         busy: (chatId) => this.isBusy(chatId),
         pending: (chatId) => this.getPendingRequests(chatId),
       },
+      // One reader for the process: its held git and pull request reads only
+      // work while the same deps serve every poll.
+      evidence: bridgeEvidenceReader(readPullRequestForBridge),
     })
     this.bus.subscribe((event) => this.bridgeReads.noteEvent(event))
+    this.bridgeChecks = new BridgeCheckService({
+      enabled: () => this.instinctBridgeOn(),
+      allowed: () => this.bridgeReads.allowed(hubInstallId()),
+      now: () => Date.now(),
+    })
+    setBridgeCheckService(this.bridgeChecks)
+    this.bus.subscribe((event) => this.bridgeChecks.noteEvent(event))
     this.bridgeDelivery = new BridgeDeliveryService(this.bridgeDeliveryHost(), this.bridgeReads)
     // Invalid mirror edits are fs-watch findings with no tool result to ride
     // on - surface them in chat as error events through this registry's bus.
@@ -1779,6 +1792,8 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly visualPreviews = new VisualPreviewTurnCounter()
   /** The Instinct bridge's read tools (flag `instinct_bridge`); it records live activity from the bus. */
   private readonly bridgeReads: BridgeReadService
+  /** Runs the owner's configured checks after a bridge turn; the only producer of measured check facts. */
+  private readonly bridgeChecks: BridgeCheckService
   private readonly bridgeDelivery: BridgeDeliveryService
   /** Whether each child told its parent something since its last task (`hub/hub-stop.ts`). */
   private readonly hubNotes = new ChildTaskNotes()
@@ -5979,6 +5994,8 @@ export class ProviderRegistry implements PeerToolHost {
     this.hubStarter.dispose()
     this.hubOutbox?.dispose()
     this.hubRemoteChanges.dispose()
+    this.bridgeChecks.dispose()
+    setBridgeCheckService(null)
     for (const off of this.hubOutboxSubscriptions.splice(0)) off()
     this.secretStore?.stop()
     // Open approval cards stay in the store: a quit or a closed window is not an answer.

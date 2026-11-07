@@ -455,7 +455,8 @@ private fun RecentRow(row: HomeRecentRow, onClick: () -> Unit, onSnooze: (() -> 
             )
             Text(
                 text = "${row.projectName} · ${row.connectionLabel}" +
-                    (row.bridgeOrigin?.let { " · ${BridgeOrigin.label(it)}" } ?: ""),
+                    (row.bridgeOrigin?.let { " · ${BridgeOrigin.label(it)}" } ?: "") +
+                    (row.bridgeOrigin?.checks?.let { " · ${BridgeOrigin.checksLabel(it)}" } ?: ""),
                 color = TextDim,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
