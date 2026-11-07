@@ -4567,6 +4567,9 @@ export class ProviderRegistry implements PeerToolHost {
       this.hubStarter.onTurnEnded(event.threadId)
     // A session that stops running may free a run slot a limited child waits for.
     if (event.type === 'status' && statusChanged && event.status !== 'running') this.limitResumer?.slotFreed()
+    // A turn began: only a turn begun after the arm disarms an auto-resume.
+    if (event.type === 'status' && statusChanged && event.status === 'running')
+      this.limitResumer?.onTurnStarted(event.threadId)
     // A turn boundary of a child: a queued move runs, and the auto-move looks.
     // `error` and `stopped` too: an agent that exits on a usage limit never
     // reports idle, and a move queued behind that turn must not be stranded.

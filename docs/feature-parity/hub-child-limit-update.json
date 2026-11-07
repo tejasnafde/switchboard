@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "hub-child-limit-update",
-  "summary": "A child chat (flag hub_children) that stops on a usage limit tells its parent once. The agent exits after the limit, and that session end wrote a second, false update, \"failed: Failed: its agent process ended with an error.\", beside the \"limited\" one; with the auto-resume armed the registry now writes none for a session end, and the next end writes failed as before once the row disarms. The update a child sent also stayed on its row after it ran again, so a child moved to another account with move_child read \"Working: Failed: its agent process ended with an error.\" for an hour and list_children kept lastUpdate failed. A child's status: running now marks its stored updates stale (hub_wakes.stale_at), so the hub view's lastWake, the desktop children list and list_children show the state alone until its next update. The rows stay stored, are still delivered to the parent, and read_child still points at them.",
+  "summary": "A child chat (flag hub_children) that stops on a usage limit tells its parent once. The agent exits after the limit, and that session end wrote a second, false update, \"failed: Failed: its agent process ended with an error.\", beside the \"limited\" one; with the auto-resume armed the registry now writes none for a session end, and the next end writes failed as before once the row disarms. The update a child sent also stayed on its row after it ran again, so a child moved to another account with move_child read \"Working: Failed: its agent process ended with an error.\" for an hour and list_children kept lastUpdate failed. A child's status: running now marks its stored updates stale (hub_wakes.stale_at), so the hub view's lastWake, the desktop children list and list_children show the state alone until its next update. The rows stay stored, are still delivered to the parent, and read_child still points at them. The auto-resume itself also no longer disarms on the turn end that comes with the agent's exit on the limit: only a turn begun after the arm counts as the chat running again, so the resume fires at the reset.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -45,7 +45,8 @@
     "automated": [
       "tests/unit/hub-limits-registry.test.ts: a child whose agent exits after a usage limit leaves one update of kind limited and stays Limited with its auto-resume armed; move_child to another account leaves the row Working with no update, and the limited update stays pending for the parent.",
       "tests/unit/hub-db.test.ts: markHubChildWakesStale takes a wake out of lastHubWakes once, leaves it in listPendingHubWakes and lastHubWakeOf, and a newer wake shows again.",
-      "tests/unit/hub-stop-registry.test.ts and tests/unit/hub-wakes.test.ts: the stopped, failed and blocked wakes, one per task, and the delivery rules are unchanged."
+      "tests/unit/hub-stop-registry.test.ts and tests/unit/hub-wakes.test.ts: the stopped, failed and blocked wakes, one per task, and the delivery rules are unchanged.",
+      "tests/unit/limit-resumer.test.ts and tests/unit/limit-resume-e2e.test.ts: a limited turn that ends again with no limit, and an agent that exits on the limit, leave the row armed and the resume fires at the reset; a turn that begins after the arm still disarms it as `ran`."
     ],
     "hardware": [],
     "notExercised": [
